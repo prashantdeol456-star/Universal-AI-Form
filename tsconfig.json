@@ -1,0 +1,21 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "types": [
+      "node"
+    ],
+    "noEmit": true,
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ]
+  },
+  "include": [
+    "packages/*/src/**/*.ts",
+    "scripts/**/*.ts",
+    "ml/scripts/**/*.mts",
+    "database/tests/**/*.ts",
+    "vitest.config.ts"
+  ]
+}

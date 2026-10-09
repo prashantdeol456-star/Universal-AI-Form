@@ -1,0 +1,103 @@
+# Production stack for a single VPS (e.g. Hostinger KVM, Ubuntu 24.04).
+#
+#   cp .env.production.example .env   # then fill in secrets: npm run gen:secrets (or see docs/DEPLOYMENT.md)
+#   docker compose up -d --build
+#
+# Only Caddy is reachable from the internet (80/443). PostgreSQL, the web app and
+# the optional local AI server live on the private compose network.
+
+name: ufa
+
+services:
+  postgres:
+    # PostgreSQL 16 with pgvector preinstalled (embeddings / semantic search in phase 5).
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ufa_owner
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ufa
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ufa_owner -d ufa"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    shm_size: 256mb
+
+  migrate:
+    build:
+      context: .
+      target: migrator
+    restart: "no"
+    environment:
+      DATABASE_URL: postgres://ufa_owner:${POSTGRES_PASSWORD}@postgres:5432/ufa
+      DB_APP_PASSWORD: ${DB_APP_PASSWORD:?set DB_APP_PASSWORD in .env}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      target: runner
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://ufa_owner:${POSTGRES_PASSWORD}@postgres:5432/ufa
+      DATABASE_APP_URL: postgres://ufa_app:${DB_APP_PASSWORD}@postgres:5432/ufa
+      STORAGE_LOCAL_DIR: /app/storage
+      TRUST_PROXY: "true"
+      LOCAL_AI_BASE_URL: ${LOCAL_AI_BASE_URL:-http://ollama:11434}
+      # Set CLAMAV_HOST=clamav in .env after starting the antivirus profile.
+      CLAMAV_HOST: ${CLAMAV_HOST:-}
+    volumes:
+      - uploads:/app/storage
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  caddy:
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env (e.g. forms.example.com)}
+    volumes:
+      - ./docker/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+
+  # Optional local AI server (phase 5). Start with:  docker compose --profile local-ai up -d
+  # Needs >= 8 GB RAM for 7B models on CPU; a GPU server is recommended for production.
+  ollama:
+    image: ollama/ollama:0.11.10
+    profiles: ["local-ai"]
+    restart: unless-stopped
+    volumes:
+      - ollama:/root/.ollama
+
+  # Optional antivirus for uploads. Needs ~1.5-3 GB RAM (KVM 4 or larger recommended).
+  #   docker compose --profile antivirus up -d clamav   then set CLAMAV_HOST=clamav in .env
+  # Without it, uploads still get magic-byte, size and PDF active-content checks, and are marked "scan skipped".
+  clamav:
+    image: clamav/clamav:1.4
+    profiles: ["antivirus"]
+    restart: unless-stopped
+    volumes:
+      - clamav:/var/lib/clamav
+
+volumes:
+  pgdata:
+  uploads:
+  caddy_data:
+  caddy_config:
+  ollama:
+  clamav:

@@ -1,0 +1,16 @@
+# Automatic HTTPS (Let's Encrypt) for your domain. Point the domain's A record at the VPS IP first.
+{$DOMAIN} {
+	encode zstd gzip
+
+	# Uploads (documents) are capped in the app too; this is the outer limit.
+	request_body {
+		max_size 25MB
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+
+	reverse_proxy web:3000
+}

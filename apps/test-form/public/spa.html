@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Admission SPA (TEST SITE)</title><link rel="stylesheet" href="/style.css"></head>
+<body>
+  <div class="banner">TEST WEBSITE — single-page app with client-side steps (like React/Angular portals).</div>
+  <h1>University Admission 2026</h1>
+  <nav><a href="#" data-step="1">Step 1: Basic</a> · <a href="#" data-step="2">Step 2: Academic</a></nav>
+  <div id="app"></div>
+  <script>
+    var steps = {
+      1: '<h2>Basic Information</h2>' +
+         '<div class="row"><label for="an">Applicant Name *</label><input id="an" name="applicantName" required></div>' +
+         '<div class="row"><label for="fn">Name of Father</label><input id="fn" name="nameOfFather"></div>' +
+         '<div class="row"><label for="db">Date of Birth (DD/MM/YYYY)</label><input id="db" name="birthDate" placeholder="DD/MM/YYYY"></div>',
+      2: '<h2>Academic Record</h2>' +
+         '<div class="row"><label for="hq">Highest Qualification</label><select id="hq" name="hq"><option value="">Select</option><option>12th</option><option>Graduation</option></select></div>' +
+         '<div class="row"><label for="pct">Percentage in Class 12</label><input id="pct" name="pct12" type="number" step="0.01"></div>' +
+         '<div class="row"><label for="yr">Year of Passing</label><input id="yr" name="yop"></div>'
+    };
+    function render(step) {
+      document.getElementById("app").innerHTML = steps[step];
+      history.pushState({ step: step }, "", "/spa/step-" + step);
+    }
+    document.querySelectorAll("[data-step]").forEach(function (a) {
+      a.addEventListener("click", function (e) { e.preventDefault(); render(a.getAttribute("data-step")); });
+    });
+    render(1);
+  </script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>DEV harness — side panel + test form</title>
+  <style>
+    body { margin: 0; display: grid; grid-template-columns: 1fr 380px; height: 100vh; font-family: system-ui, sans-serif; }
+    iframe { width: 100%; height: 100%; border: 0; }
+    #panel { border-left: 1px solid #ddd; }
+  </style>
+</head>
+<body>
+  <iframe name="form" src="/" title="Test form"></iframe>
+  <iframe id="panel" name="panel" src="/__dev/ext/sidepanel.html" title="Extension side panel (dev harness)"></iframe>
+  <script>
+    // ?page=/mail.html opens another test page on the left (same site only).
+    var page = new URLSearchParams(location.search).get("page");
+    if (page && /^\/[\w.\/-]*$/.test(page)) document.querySelector("iframe[name=form]").src = page;
+  </script>
+</body>
+</html>

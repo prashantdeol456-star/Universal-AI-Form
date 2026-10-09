@@ -1,0 +1,11 @@
+# Training runs on a GPU machine (not the web VPS). Python 3.10–3.12, CUDA GPU with ≥ 16 GB for 7B QLoRA.
+#   python -m venv ml/.venv && ml/.venv/bin/pip install -r ml/requirements.txt
+torch>=2.3
+transformers>=4.45
+peft>=0.12
+trl>=0.11
+datasets>=2.20
+accelerate>=0.33
+bitsandbytes>=0.43 ; platform_system == "Linux"
+sentencepiece>=0.2
+safetensors>=0.4

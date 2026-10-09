@@ -1,0 +1,55 @@
+node_modules/
+.next/
+dist/
+out/
+coverage/
+*.tsbuildinfo
+next-env.d.ts
+
+# env / secrets
+.env
+.env.*
+!.env.example
+!.env.production.example
+
+# local dev database (scripts/dev-db.mjs)
+.data/
+
+# local file storage (uploaded documents)
+storage/
+
+# ML artifacts
+ml/**/outputs/
+ml/**/checkpoints/
+ml/**/*.safetensors
+ml/**/__pycache__/
+ml/.venv/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# built browser extension
+apps/extension/dist/
+
+# ML pipeline: generated datasets, evaluations, model outputs, virtualenv
+ml/datasets/*/
+ml/evaluation/*.json
+ml/outputs/
+ml/.venv/
+__pycache__/
+
+# keys, certificates, logs and local databases (Phase 0 review)
+*.pem
+*.key
+*.p12
+*.pfx
+*.log
+*.sqlite
+*.sqlite3
+*.db
+uploads/
+.claude/settings.local.json

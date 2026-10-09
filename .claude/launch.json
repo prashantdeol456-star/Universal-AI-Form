@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 3000
+    },
+    {
+      "name": "test-form",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["apps/test-form/server.mjs"],
+      "port": 4000
+    }
+  ]
+}

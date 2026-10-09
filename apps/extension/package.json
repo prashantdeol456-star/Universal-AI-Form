@@ -1,0 +1,22 @@
+{
+  "name": "@ufa/extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "watch": "node build.mjs --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ufa/form-engine": "*",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.3.4",
+    "@types/react": "^19.1.12",
+    "@types/react-dom": "^19.1.9",
+    "esbuild": "^0.28.2"
+  }
+}

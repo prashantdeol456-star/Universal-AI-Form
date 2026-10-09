@@ -1,0 +1,28 @@
+# Local development services (alternative to `npm run dev:db` when Docker is available).
+#   npm run dev:services
+# PostgreSQL on localhost:54320 and Mailpit (SMTP 1025, web UI http://localhost:8025).
+# Match .env:  DATABASE_URL=postgres://ufa_owner:<POSTGRES_PASSWORD>@localhost:54320/ufa
+#              SMTP_HOST=localhost  SMTP_PORT=1025
+
+name: ufa-dev
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ufa_owner
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ufa_owner_dev_password}
+      POSTGRES_DB: ufa
+    ports:
+      - "127.0.0.1:54320:5432"
+    volumes:
+      - pgdata-dev:/var/lib/postgresql/data
+
+  mailpit:
+    image: axllent/mailpit:v1.27
+    ports:
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
+
+volumes:
+  pgdata-dev:

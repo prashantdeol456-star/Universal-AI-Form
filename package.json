@@ -1,0 +1,51 @@
+{
+  "name": "universal-ai-form-assistant",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Universal self-learning AI form filling platform (self-hosted, VPS-ready)",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=20.11"
+  },
+  "scripts": {
+    "dev": "npm run dev -w @ufa/web",
+    "build": "npm run build -w @ufa/web",
+    "start": "npm run start -w @ufa/web",
+    "typecheck": "tsc -p tsconfig.json --noEmit && npm run typecheck -w @ufa/web && npm run typecheck -w @ufa/extension",
+    "lint": "eslint .",
+    "test": "vitest run --project unit",
+    "test:watch": "vitest",
+    "test:db": "node scripts/test-db.mjs",
+    "db:migrate": "tsx packages/db/src/cli.ts migrate",
+    "db:status": "tsx packages/db/src/cli.ts status",
+    "db:create-admin": "tsx packages/db/src/cli.ts create-admin",
+    "dev:services": "docker compose -f docker-compose.dev.yml up -d",
+    "dev:services:down": "docker compose -f docker-compose.dev.yml down",
+    "gen:secrets": "node scripts/generate-secrets.mjs",
+    "check:gemini": "tsx scripts/check-gemini.ts",
+    "test:all": "npm run test && npm run test:db",
+    "dev:db": "node scripts/dev-db.mjs",
+    "build:extension": "npm run build -w @ufa/extension",
+    "test-form": "node apps/test-form/server.mjs",
+    "ml": "tsx ml/scripts/ml.mts"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.35.0",
+    "@types/node": "^22.18.0",
+    "embedded-postgres": "16.13.0-beta.17",
+    "eslint": "^9.35.0",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "globals": "^16.4.0",
+    "happy-dom": "^20.14.5",
+    "tsx": "^4.20.5",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.43.0",
+    "vitest": "^4.1.11"
+  },
+  "overrides": {
+    "postcss": "^8.5.29"
+  }
+}

@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Compose (TEST SITE)</title><link rel="stylesheet" href="/style.css">
+<style>
+  .compose { border: 1px solid #d0d5dd; border-radius: 10px; max-width: 640px; background: #fff; }
+  .compose input { width: 100%; box-sizing: border-box; border: 0; border-bottom: 1px solid #eaecf0; padding: 10px 12px; font: inherit; }
+  .compose [contenteditable] { min-height: 260px; padding: 12px; outline: none; }
+  .compose .bar { display: flex; gap: 8px; padding: 10px 12px; border-top: 1px solid #eaecf0; }
+  #sent { color: #b42318; font-weight: 600; }
+</style></head>
+<body>
+  <div class="banner">TEST WEBSITE — a Gmail-like compose window for trying "Write email". Nothing is sent anywhere.</div>
+  <h1>New message</h1>
+  <div class="compose">
+    <input name="to" aria-label="To recipients" placeholder="To">
+    <input name="subjectbox" placeholder="Subject" aria-label="Subject">
+    <div aria-label="Message Body" role="textbox" contenteditable="true" g_editable="true"></div>
+    <div class="bar"><button type="button" id="send">Send</button><span id="sent"></span></div>
+  </div>
+  <script>
+    // If anything ever pressed Send for the user, this test page would show it.
+    document.getElementById("send").addEventListener("click", function () { document.getElementById("sent").textContent = "Send was clicked"; });
+  </script>
+</body>
+</html>

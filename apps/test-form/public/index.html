@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Test Recruitment Portal — Application Form (TEST SITE)</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="banner">TEST WEBSITE for Universal AI Form Assistant — not a real government portal. Do not enter real data.</div>
+  <h1>Staff Recruitment Examination 2026 — Online Application</h1>
+  <p class="muted">Fields marked * are mandatory. / * चिह्नित फ़ील्ड अनिवार्य हैं।</p>
+
+  <form id="application" action="/submitted.html" method="get" novalidate>
+
+    <!-- 1. Classic <label for> layout -->
+    <h2>Personal Details</h2>
+    <div class="row"><label for="candName">Candidate Full Name *</label><input id="candName" name="candidateName" required autocomplete="name"></div>
+    <div class="row"><label for="matricName">Name as per Matriculation Certificate</label><input id="matricName" name="nameMatric"></div>
+    <div class="row"><label for="fname">Father's Name *</label><input id="fname" name="fatherName" required></div>
+    <div class="row"><label for="mname">Mother's Name *</label><input id="mname" name="motherName" required></div>
+    <div class="row"><label for="dob">Date of Birth *</label><input id="dob" name="dob" type="date" required>
+      <small class="help-text">As recorded in your Class 10 certificate</small></div>
+
+    <!-- 2. Radio group inside fieldset/legend -->
+    <fieldset class="question">
+      <legend>Gender *</legend>
+      <label><input type="radio" name="gender" value="M" required> Male</label>
+      <label><input type="radio" name="gender" value="F"> Female</label>
+      <label><input type="radio" name="gender" value="T"> Transgender</label>
+    </fieldset>
+
+    <div class="row"><label for="marital">Marital Status</label>
+      <select id="marital" name="maritalStatus">
+        <option value="">-- Select --</option><option>Unmarried</option><option>Married</option><option>Divorced</option><option>Widowed</option>
+      </select></div>
+
+    <!-- 3. Hindi labels -->
+    <h2>अन्य विवरण (Other Details)</h2>
+    <div class="row"><label for="pitaHi">पिता का नाम</label><input id="pitaHi" name="pita_naam"></div>
+    <div class="row"><label for="addrHi">स्थायी पता *</label><textarea id="addrHi" name="sthayi_pata" rows="3" required></textarea></div>
+
+    <!-- 4. Table layout: label in previous cell, no <label> element -->
+    <h2>Contact Details</h2>
+    <table class="grid">
+      <tr><td>Mobile Number *</td><td><input name="txtMobile" type="tel" maxlength="10" pattern="[6-9][0-9]{9}" required></td></tr>
+      <tr><td>Email ID</td><td><input name="txtEmail" type="email"></td></tr>
+      <tr><td>PIN Code</td><td><input name="txtPin" inputmode="numeric" maxlength="6"></td></tr>
+    </table>
+
+    <!-- 5. Dynamic dependent fields: Country -> State -> District -->
+    <div class="row"><label for="country">Country *</label>
+      <select id="country" name="country" required><option value="">Select</option><option>India</option><option>Nepal</option><option>Other</option></select></div>
+    <div class="row" id="stateRow" hidden><label for="state">State *</label>
+      <select id="state" name="state"><option value="">Select</option><option>Uttar Pradesh</option><option>Bihar</option><option>Rajasthan</option></select></div>
+    <div id="districtSlot"></div>
+
+    <!-- 6. Recruitment-specific -->
+    <h2>Category &amp; Eligibility</h2>
+    <div class="row"><label for="cat">Category *</label>
+      <select id="cat" name="category" required><option value="">Select</option><option>UR</option><option>OBC</option><option>SC</option><option>ST</option><option>EWS</option></select></div>
+    <div class="row question">
+      <span class="q">Are you an Ex-Serviceman? *</span>
+      <label><input type="radio" name="exsm" value="Y"> Yes</label>
+      <label><input type="radio" name="exsm" value="N"> No</label>
+    </div>
+    <div class="row"><label for="exp">Experience (in years)</label><input id="exp" name="experience" type="number" min="0" max="40"></div>
+
+    <!-- 7. Custom (non-native) searchable dropdown, ARIA combobox -->
+    <div class="row"><span id="qualLbl">Highest Qualification *</span>
+      <div class="combo">
+        <input id="qual" role="combobox" aria-labelledby="qualLbl" aria-controls="qualList" aria-autocomplete="list" aria-expanded="false" autocomplete="off" required>
+        <ul id="qualList" role="listbox" hidden>
+          <li role="option">10th</li><li role="option">12th</li><li role="option">Diploma</li><li role="option">Graduation</li><li role="option">Post Graduation</li>
+        </ul>
+      </div></div>
+    <div class="row"><label for="yop">Year of Passing</label><input id="yop" name="yearOfPassing" placeholder="YYYY" maxlength="4"></div>
+
+    <!-- 8. Ambiguous labels -->
+    <h2>Guardian Details</h2>
+    <div class="row"><label for="g1">Name</label><input id="g1" name="guardian_nm"></div>
+    <div class="row"><label for="g2">Father / Guardian Name</label><input id="g2" name="fatherOrGuardian"></div>
+    <!-- Hard labels: nothing in the rules understands these (Gemini fallback test) -->
+    <div class="row"><label for="g3">Responsible adult residing nearby</label><input id="g3" name="localAdult"></div>
+    <div class="row"><label for="centre">Preferred examination centre</label>
+      <select id="centre" name="examCentre"><option value="">Select</option><option>Delhi</option><option>Lucknow</option><option>Patna</option></select></div>
+
+    <!-- 9. Shadow DOM widget -->
+    <h2>Additional Information</h2>
+    <ufa-test-widget></ufa-test-widget>
+
+    <!-- 10. Same-origin iframe section -->
+    <iframe src="/frame.html" title="Bank details" class="frame"></iframe>
+
+    <!-- 11. Uploads -->
+    <h2>Upload Documents</h2>
+    <div class="row"><label for="photo">Upload Photograph * (JPG, 20–50 KB)</label><input id="photo" name="photo" type="file" accept=".jpg,.jpeg" required></div>
+    <div class="row"><label for="sign">Upload Signature * (JPG, 10–20 KB)</label><input id="sign" name="signature" type="file" accept=".jpg,.jpeg" required></div>
+
+    <!-- 12. Security: must stay manual -->
+    <h2>Verification</h2>
+    <div class="row"><img src="/captcha.svg" alt="captcha image" width="150" height="45"><label for="cap">Enter the characters shown in the image</label><input id="cap" name="captchaCode" autocomplete="off"></div>
+    <div class="row"><label for="otp">Enter OTP sent to your mobile</label><input id="otp" name="otp" inputmode="numeric" maxlength="6"></div>
+
+    <div class="row"><label><input type="checkbox" name="declaration" required> I hereby declare that the information given above is true.</label></div>
+
+    <!-- Not fields: must be ignored -->
+    <input type="hidden" name="csrf" value="x">
+    <button type="submit">Submit Application</button>
+  </form>
+
+  <script src="/form.js"></script>
+</body>
+</html>

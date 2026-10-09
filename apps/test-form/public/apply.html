@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Careers – Apply (TEST SITE)</title><link rel="stylesheet" href="/style.css">
+<style>
+  .drop { border: 2px dashed #c8ccd4; border-radius: 8px; padding: 28px; text-align: center; background: #f7f8fa; }
+  .drop button { background: none; border: 0; color: #7a1fa2; text-decoration: underline; font: inherit; cursor: pointer; }
+  #picked { margin-top: 10px; font-weight: 600; color: #067647; }
+</style></head>
+<body>
+  <div class="banner">TEST WEBSITE — a Workday-style "Autofill with Resume" step for trying document upload. Nothing is sent anywhere.</div>
+  <h1>Software Product Manager – Apply</h1>
+  <section>
+    <h2>Autofill with Resume</h2>
+    <p>Please attach a resume in order to auto-fill a portion of your application. Upload either DOC, DOCX, HTML, PDF, or TXT file types (5MB max)</p>
+    <div class="drop">
+      <div>Drop file here</div>
+      <div>or <button type="button" id="select">Select file</button></div>
+      <input type="file" data-automation-id="file-upload-input-ref" accept=".doc,.docx,.html,.pdf,.txt" style="display:none">
+      <div id="picked"></div>
+    </div>
+  </section>
+  <div class="row"><label for="photo">Passport size photograph (JPG/PNG)</label><input id="photo" type="file" accept="image/jpeg,image/png"></div>
+  <div class="row"><label for="gn">Given Name(s)</label><input id="gn" name="givenName"></div>
+  <div class="row"><label for="fam">Family Name</label><input id="fam" name="familyName"></div>
+  <div class="row"><label for="li">LinkedIn Profile</label><input id="li" name="linkedin"></div>
+  <div class="row"><label for="sal">Please provide your desired salary.</label><input id="sal" name="salary"></div>
+  <div class="row"><label for="rel">Are you willing to Relocate?</label><select id="rel" name="relocate"><option value="">Select One</option><option>Yes</option><option>No</option></select></div>
+  <button type="button" id="continue">Continue</button>
+  <script>
+    var input = document.querySelector('[data-automation-id="file-upload-input-ref"]');
+    document.getElementById("select").addEventListener("click", function () { input.click(); });
+    // Like the real site: the page reacts to the input's change event.
+    input.addEventListener("change", function () { document.getElementById("picked").textContent = input.files.length ? "Uploaded: " + input.files[0].name + " (" + input.files[0].size + " bytes)" : ""; });
+    document.getElementById("continue").addEventListener("click", function () { document.body.dataset.continued = "yes"; });
+  </script>
+</body>
+</html>

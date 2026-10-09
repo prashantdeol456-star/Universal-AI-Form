@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Careers – Product Owner (TEST SITE)</title><link rel="stylesheet" href="/style.css">
+<style>
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+  .upload { border: 1px dashed #9ab; border-radius: 8px; padding: 14px; margin: 12px 0; }
+  #submitted { color: #b42318; font-weight: 700; }
+</style></head>
+<body>
+  <div class="banner">TEST WEBSITE — a job application like the one in your screenshot, for trying "Fill everything". Nothing is sent anywhere.</div>
+  <h1>Apply: Product Owner</h1>
+  <form id="apply" onsubmit="event.preventDefault(); document.getElementById('submitted').textContent = 'Submit was clicked';">
+    <div class="row"><label for="role">Role you’re applying for *</label>
+      <select id="role" name="role" required><option value="">Select</option><option selected>Product Owner</option><option>Product Manager</option></select></div>
+    <div class="grid">
+      <div class="row"><label for="name">Full name *</label><input id="name" name="fullName" required></div>
+      <div class="row"><label for="email">Email address *</label><input id="email" type="email" name="email" required></div>
+      <div class="row"><label for="phone">Phone number *</label><input id="phone" type="tel" name="phone" required></div>
+      <div class="row"><label for="city">Current city / location *</label><input id="city" name="city" placeholder="City, country" required></div>
+      <div class="row"><label for="exp">Experience (years) *</label><input id="exp" name="experience" placeholder="0 for freshers" required></div>
+      <div class="row"><label for="qual">Highest qualification *</label><input id="qual" name="qualification" placeholder="e.g. B.E. in Computer Science" required></div>
+    </div>
+    <div class="row"><label for="notice">Notice period / earliest start date *</label><input id="notice" name="notice" placeholder="e.g. Immediately, 30 days, or a date" required></div>
+    <div class="row"><label for="heard">How did you hear about us? *</label>
+      <select id="heard" name="heard" required><option value="">Select One</option><option>LinkedIn</option><option>Naukri</option><option>Company website</option><option>Friend / referral</option></select></div>
+    <div class="row"><label for="about">Tell us about yourself (optional)</label><textarea id="about" name="about" rows="4" placeholder="Your skills, relevant experience, or why you’d like to join us."></textarea></div>
+    <div class="upload"><b>Upload your resume *</b><div>PDF only · Maximum 5 MB</div><input type="file" name="resume" accept="application/pdf" required></div>
+    <div class="row"><label for="captcha">Security check (CAPTCHA) *</label><img src="/captcha.svg" alt="captcha" height="32"><input id="captcha" name="captcha" placeholder="Enter code" required></div>
+    <div class="row"><label><input type="checkbox" name="consent" required> I agree to Hostripples using my details and resume to review my application. *</label></div>
+    <button type="submit">Submit application</button> <span id="submitted"></span>
+  </form>
+</body>
+</html>
