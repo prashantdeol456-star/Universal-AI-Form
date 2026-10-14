@@ -40,7 +40,10 @@ export function planFill(snapshot: FormSnapshot, mapping: MapResult | null): Age
       continue;
     }
     if (!isFillable(f) || f.hasValue) continue;
-    if (hasValue(m)) {
+    // A choice field is filled from the profile only when the value matches one of its options;
+    // otherwise the server rejects the whole fill, so the user is asked instead.
+    const choice = f.options.length > 0 && (f.kind === "select" || f.kind === "radio" || f.kind === "combobox");
+    if (hasValue(m) && (!choice || m!.optionMatch)) {
       plan.selection[f.id] = { include: true, manualValue: "", overwrite: false };
       continue;
     }

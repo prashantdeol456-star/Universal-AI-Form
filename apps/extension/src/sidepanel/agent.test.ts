@@ -64,6 +64,21 @@ describe("planFill (Hostripples-style application)", () => {
   });
 });
 
+describe("planFill with choice fields", () => {
+  it("asks instead of filling when the profile value is not one of the options", () => {
+    const qual = field("Highest Qualification", { kind: "select", options: ["10th", "12th", "Graduate", "Post Graduate"] });
+    const gender = field("Gender", { kind: "radio", options: ["Male", "Female"] });
+    const snapshot = { fields: [qual, gender] } as unknown as FormSnapshot;
+    const mapping = {
+      fields: [mapped(qual, "education.highest_qualification", "MBA, Finance & HR"), mapped(gender, "personal.gender", "Male", { optionMatch: "Male" })],
+    } as unknown as MapResult;
+    const p = planFill(snapshot, mapping);
+    expect(p.selection[gender.id]?.include).toBe(true);
+    expect(p.selection[qual.id]).toBeUndefined();
+    expect(p.ask.map((a) => a.field.label)).toEqual(["Highest Qualification"]);
+  });
+});
+
 describe("roleOf", () => {
   it("reads the job title from the form or page title", async () => {
     const { roleOf } = await import("./agent");
