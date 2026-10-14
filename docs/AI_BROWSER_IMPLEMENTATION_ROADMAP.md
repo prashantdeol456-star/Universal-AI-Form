@@ -9,7 +9,8 @@ test && npm run test:db && npm run build:extension && npm run build` green befor
 | Phase | Status |
 |---|---|
 | 0 — Groundwork | **Done**, except the first VPS deploy (needs the owner's server access and secrets) |
-| 1–6 | Not started |
+| 1 — Persistent tasks | **Done** (15 October 2026) — see "Phase 1 — implemented" below; browser-step execution is deliberately left for Phase 2 |
+| 2–6 | Not started |
 | 7 — WhatsApp | Design only (`AI_BROWSER_WHATSAPP_DESIGN.md`) |
 
 ## Phase 0 — Groundwork (no new features)
@@ -43,6 +44,81 @@ Found during the Phase 0 regression run (both pre-existing, not caused by the re
 | Verify-before-retry | Each step type has `verify()`; retry only when verify fails |
 | Acceptance | Closing and reopening the panel resumes a paused fill at the next unfinished field; a crashed step is retried once and never double-fills |
 | Rollback | Feature flag `TASKS_ENABLED=false` falls back to the current in-panel agent |
+
+### Phase 1 — implemented
+
+**Migration** `0016_task_engine.sql` (forward-only; 0001–0015 untouched):
+
+| Table | Key points |
+|---|---|
+| `tasks` | status, priority, `input_json`, `result_json`, `checkpoint_json`, error code/message, `idempotency_key` (unique per user), lease (`lease_owner`, `lease_token`, `lease_expires_at`), `attempt_count`, timestamps incl. `started_at`, `completed_at`, `cancelled_at`, `last_checkpoint_at`; `unique (id, user_id)` |
+| `task_steps` | `step_type` = `server.*` / `browser.*` / `approval.*`, `idempotent`, `sequence_number` (unique per task), `result_json`, **`result_secret`** (AES-GCM, for drafts/answers), attempts, errors |
+| `task_events` | append-only history (`bigint` identity), message ≤ 500 chars, no content |
+| `approvals` | `action_type`, `action_summary`, `requested_payload_json` + **`payload_hash`** (binds the approval to one action), `pending/approved/rejected/expired`, `expires_at`, **`consumed_at`** (single use); trigger `app.approvals_guard` makes decisions final and forbids re-targeting |
+
+All four tables: RLS forced, owner-only policies for `ufa_app`; steps/events/approvals reference `(task_id, user_id)` so a row
+cannot point at another user's task; the runtime role cannot update/delete events or insert approvals.
+
+**State machines** (`packages/shared/src/tasks.ts`):
+
+```
+task: queued → running | waiting_for_browser | waiting_for_approval | paused | completed | failed | cancelled
+      running → queued | waiting_for_browser | waiting_for_approval | paused | completed | failed | cancelled
+      waiting_for_browser → running | paused | failed | cancelled
+      waiting_for_approval → queued | paused | failed | cancelled
+      paused → queued | cancelled          failed → queued | cancelled          completed, cancelled: final
+step: pending → running | waiting | skipped | cancelled
+      running → completed | failed | waiting | pending | cancelled
+      waiting → running | completed | failed | pending | cancelled
+      failed → pending | cancelled         completed, skipped, cancelled: final
+```
+
+Every change goes through `assertTaskTransition` / `assertStepTransition` (typed `TaskTransitionError`, HTTP 409) and the SQL
+update repeats the expected "from" status, so concurrent writers cannot both win.
+
+**Engine** (`packages/tasks`, wired in `apps/web/src/server/tasks/engine.ts`, runner in `runner.ts`, started from
+`instrumentation-node.ts`, switch `TASKS_RUNNER_ENABLED`):
+
+- Claim: `FOR UPDATE SKIP LOCKED` + random lease token + `lease_expires_at` (2 min). One step per claim; result committed
+  with the step (= checkpoint), lease released.
+- Expired lease: task back to `queued`; an **idempotent** step runs again, any other step becomes `waiting` with
+  `needs_verification` and the task `paused` — retry then requires `confirmUncertain: true`.
+- Pause wins over a running step (the step's result is kept, the next step does not start); cancel discards a running
+  step's result; completed/cancelled are final; retries re-run only failed/unverified steps, max 3 attempts per step.
+- Approvals: created when an `approval.*` step is reached (TTL 7 days); approving lets the runner perform the step's effect
+  **once** in the user's transaction together with `consumed_at`; a changed payload (hash mismatch) fails the step; reject
+  fails the task (cancels it if it was paused); expiry fails the task, retry asks again.
+- Task types: `draft_email` (compose → approval "mark as ready", nothing sent), `draft_answers` (one draft per question →
+  approval "save to Saved Answers"), `fill_form` (browser steps; waits in `waiting_for_browser` — **execution is Phase 2**).
+- Secrets: task inputs have passwords/OTPs/PINs/tokens stripped; worker payload keys that look like credentials are
+  refused (422); error messages are redacted and capped; events never contain draft text.
+
+**API** (all `requireUser()`, owner from the session, zod-validated, rate-limited):
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET / POST | `/api/tasks` | list (`status`, `limit` ≤ 50, cursor `beforeCreatedAt` + `beforeId`) / create (`taskType`, `title?`, `description?`, `input`, `priority?`, `idempotencyKey?` → 201 or 200 for a repeat) |
+| GET | `/api/tasks/:id` | task, ordered steps (owner sees decrypted output), approvals |
+| GET | `/api/tasks/:id/events` | history, newest first (`limit` ≤ 200, `before`) |
+| POST | `/api/tasks/:id/control` | `{action: pause \| resume \| cancel \| retry, stepId?, confirmUncertain?}` |
+| POST | `/api/approvals/:id` | `{decision: approve \| reject, note?}` |
+| POST | `/api/tasks/worker/claim` | the user's extension claims its next browser step (own tasks only) |
+| POST | `/api/tasks/:id/steps/:stepId/report` | progress / completed / failed / uncertain, with the lease token |
+| POST | `/api/tasks/:id/checkpoint` | save checkpoint, with the lease token |
+
+**UI**: dashboard `/dashboard/tasks` (filters, cursor pagination, new-task form with idempotency key) and
+`/dashboard/tasks/:id` (steps with outputs + copy, approval card, controls incl. "I checked" confirmation, history,
+auto-refresh while live); extension **Tasks** tab (list, detail, steps, recent events, approve/reject, pause / resume /
+cancel / retry; polls only while open).
+
+**Known limitations / deferred**
+
+- The extension does not execute browser steps yet (`fill_form` tasks wait); the claim/report/checkpoint API is in place
+  and tested. Phase 2.
+- The runner is an in-process timer per web container (safe with several containers thanks to leases).
+- Drafts are viewed in the dashboard; the extension links there instead of showing them.
+- In Next.js dev, the engine is cached on `globalThis`: restart the dev server after changing engine code.
+- Gemini returned 429/503 during the live checks, so drafts came from templates; the AI path is covered by stubbed tests.
 
 ## Phase 2 — Safer browser actions
 

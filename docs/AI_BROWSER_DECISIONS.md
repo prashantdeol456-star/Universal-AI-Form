@@ -20,6 +20,18 @@ Each entry: question, options, recommendation, and whether the owner's approval 
 | D-14 | Routing modes | (a) one global switch; (b) `AI_ROUTING_MODE` = `local_only` / `hybrid` / `cloud_enabled` on the server + existing per-user consent | **(b)**, implemented in Phase 0 with default `hybrid` (no behaviour change). A per-user mode in Settings can follow in Phase 1 | No (default keeps current behaviour) |
 | D-15 | Comboboxes that open on `focus` when the page is not focused | (a) leave; (b) dispatch `focus`/`focusin` when `document.hasFocus()` is false | **(b)**, in Phase 2 with live-site checks; it changes how every site is filled | Yes |
 
+### Phase 1 decisions (taken, no approval needed — they follow D-02 and D-08)
+
+| ID | Decision | Why |
+|---|---|---|
+| D-16 | Engine in its own workspace package `@ufa/tasks`, taking the DB pools, step handlers and encryption as parameters | Lets the database tests run the real engine against PostgreSQL with mock handlers; the web app supplies real handlers |
+| D-17 | Postgres leases (`FOR UPDATE SKIP LOCKED` + token + expiry) and an in-process runner; no Redis or queue service | Same pattern as the document worker; safe with several containers |
+| D-18 | Lease expiry: idempotent steps re-run, others park as `needs_verification` and pause the task | Never repeat a possibly side-effecting action because a worker crashed |
+| D-19 | Approvals bound to a payload hash, single use (`consumed_at`), final once decided (DB trigger), 7-day expiry | An approval for one action cannot authorise another, or the same one twice |
+| D-20 | Step output with personal text stored encrypted in `task_steps.result_secret`; events carry no content | Drafts and answers are personal data |
+| D-21 | Engine errors recognised by `name`/`code` (`taskErrorInfo`) instead of `instanceof` | Next.js dev loaded the package twice and `instanceof` failed (found in the live check) |
+| D-22 | Reject on a waiting task → `failed` (retry asks again); reject while paused → `cancelled` | `paused → failed` is not a valid transition |
+
 ## Personal WhatsApp vs WhatsApp Business
 
 - **Personal WhatsApp** (the regular app): no official API gives a third-party app access to its chats. Supported,

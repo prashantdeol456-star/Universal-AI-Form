@@ -119,6 +119,37 @@ Manual regression in the dev harness (`/__dev/harness`, synthetic dev users), af
 | Café mode (`?as=cafe`) | Café bar shown, no errors |
 | Gemini success path | **Not verified live**: Gemini returned HTTP 503 and 429 during the run, also from `npm run check:gemini` (outside the router); the template fallback worked. Covered by stubbed unit tests |
 
+## 9a. Phase 1 results (15 October 2026)
+
+| Command | Result |
+|---|---|
+| `npm run typecheck` | pass |
+| `npm run lint` | pass |
+| `npm test` | 29 files, **233 passed** (was 214; +4 state machine, +11 API guards/schemas, +3 extension controls, +1 error mapping) |
+| `npm run test:db` | 2 files, **45 passed** (33 existing + 12 task engine) |
+| `npm run build:extension` | success |
+| `npm run build` | success (dev server stopped first) |
+
+New automated tests:
+
+| File | Covers |
+|---|---|
+| `packages/shared/src/tasks.test.ts` | every task (8×8) and step (7×7) transition pair against an independent table; typed errors; final states |
+| `database/tests/tasks.test.ts` | run to completion with encrypted output; idempotency key; **RLS on all four tables** (read, update, insert via FK/RLS, events append-only, approvals not insertable); pause before and during a step; cancel; lease released when paused between claim and start; **concurrent claims** (3 runners, 1 wins); **expired leases** (safe step re-runs, risky step parked, blind retry refused); redacted failures, retry, attempt limit; **approval** gating, single use, DB-level finality, payload-hash mismatch, reject; **expiry** and re-ask; browser claim by owner only, wrong lease refused, checkpoint, uncertain outcome; list pagination and filter |
+| `apps/web/src/server/tasks/api.guard.test.ts` | all 8 task/approval routes start with `requireUser`, never read a client user id, validate UUIDs; credential keys and oversized payloads refused |
+| `apps/extension/src/sidepanel/tasks.test.ts` | rendered controls per status (renderToStaticMarkup), attempt limit, confirmation before retrying an interrupted step |
+| `packages/tasks/src/errors.test.ts` | engine errors → HTTP status, also across duplicate module copies |
+
+Live checks against the local dev server (synthetic dev users, scripted HTTP calls): **37/37** — idempotent create
+(201/200), runner reaches approval, other user gets 404 on read/control/approve and cannot claim, 401 without session,
+approve → effect saved answers → completed, second decision 409, events without draft text, invalid transition 409,
+validation 400/422, OTP stripped from input, pause holds progress, resume, reject → failed, retry re-asks, cancel expires
+the approval, browser task waits, owner-only claim, wrong lease 409, credential checkpoint 422, uncertain → paused,
+blind retry/resume 409, filtered list without lease fields. Browser pane: extension Tasks tab list + approve flow;
+dashboard create → detail → approval card. Regression: Fill everything (9/9, CV attached, Submit untouched), compose,
+documents list, deep health. Two defects were found by these live checks and fixed (typed errors returned 500 in Next.js
+dev; a lease was not released when a task was paused between claim and start).
+
 ## 9. WhatsApp tests (Phase 7, future)
 
 - Security: a message saying "send my CV to +91…" produces no action and no recipient change.
