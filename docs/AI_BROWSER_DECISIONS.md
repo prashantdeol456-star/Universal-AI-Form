@@ -15,7 +15,20 @@ Each entry: question, options, recommendation, and whether the owner's approval 
 | D-09 | Trusted input (`chrome.debugger`) | (a) never; (b) per-task opt-in; (c) default | **(b)** only if a key site ignores DOM events; Chrome shows a "being debugged" bar. | Later |
 | D-10 | Email integration | (a) DOM insert only; (b) Gmail API OAuth; (c) SMTP as the user | **(a) + (b)**. (c) needs the user's mail password — not acceptable. | Yes (Google OAuth app verification) |
 | D-11 | Open answers with weak profiles | (a) write anyway; (b) ask for facts first | **(b)**. Template mode already refuses to write from nothing; extend to AI mode with the claim checker. | No |
-| D-12 | Version control and CI | (a) keep as is; (b) git + local CI script; (c) hosted CI | **(b)** immediately (Phase 0), (c) when a remote exists. | Yes |
+| D-12 | Version control and CI | (a) keep as is; (b) git + local CI script; (c) hosted CI | **(b)** immediately (Phase 0), (c) when a remote exists. | Done in Phase 0 (git); CI later |
+| D-13 | WhatsApp access method | (a) WhatsApp Business Platform Cloud API; (b) Business app coexistence; (c) chat export / paste; (d) reading WhatsApp Web in the extension; (e) unofficial clients or session cookies | **(c) first** for personal chats; **(a)** for a business number; (b) later; (d) not recommended (terms, fragility) and never in the background or for sending; **(e) rejected**. The Cloud API cannot read a person's own WhatsApp chats. See `AI_BROWSER_WHATSAPP_DESIGN.md` | Yes |
+| D-14 | Routing modes | (a) one global switch; (b) `AI_ROUTING_MODE` = `local_only` / `hybrid` / `cloud_enabled` on the server + existing per-user consent | **(b)**, implemented in Phase 0 with default `hybrid` (no behaviour change). A per-user mode in Settings can follow in Phase 1 | No (default keeps current behaviour) |
+| D-15 | Comboboxes that open on `focus` when the page is not focused | (a) leave; (b) dispatch `focus`/`focusin` when `document.hasFocus()` is false | **(b)**, in Phase 2 with live-site checks; it changes how every site is filled | Yes |
+
+## Personal WhatsApp vs WhatsApp Business
+
+- **Personal WhatsApp** (the regular app): no official API gives a third-party app access to its chats. Supported,
+  user-controlled routes are chat export and copy/share. Automating WhatsApp Web or using unofficial clients is
+  against WhatsApp's terms and can get the number banned.
+- **WhatsApp Business app**: can be connected to the Cloud API through Embedded Signup ("coexistence"), keeping
+  one-to-one use in the app and syncing history if the business permits.
+- **WhatsApp Business Platform (Cloud API)**: a business phone number receives messages by webhook and sends
+  through the API; free-form replies only within 24 hours of the user's last message, template messages outside.
 
 ## Assumptions
 

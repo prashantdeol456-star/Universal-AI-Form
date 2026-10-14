@@ -7,7 +7,8 @@ lint, extension build — all passing.
 
 | Area | What to test | Where |
 |---|---|---|
-| Model router | purpose → provider choice for local-only / hybrid / cloud; budget exhaustion falls back; consent off blocks cloud | `packages/ai/src/router/*.test.ts` |
+| Model router | purpose → provider choice for local-only / hybrid / cloud; budget exhaustion falls back; consent off blocks cloud; reserved purposes refuse | `packages/ai/src/router.test.ts` (**exists**, 4 tests) |
+| WhatsApp (Phase 7) | export parser (Android/iOS formats, Hindi text, media placeholders); per-chat allowlist; draft never contains other chats; idempotent send; 24-hour window check | `packages/ai/src/whatsapp/*.test.ts` (future) |
 | Planner | command → typed actions only; unknown action rejected; plan for "fill this form", "find jobs", "email recruiter" | `packages/ai/src/agent/*.test.ts` |
 | Claim checker | sentences with facts not in the supplied set are flagged; contact/ID patterns blocked unless asked | same |
 | Task state machine | allowed transitions (pending → running → awaiting_approval → done/failed/cancelled); resume from checkpoint | `apps/web/src/server/tasks/*.test.ts` |
@@ -94,3 +95,33 @@ npm run build
 ```
 
 `npm run build` must run with the dev server stopped (both use `apps/web/.next`).
+
+## 8. Phase 0 results (14 October 2026)
+
+| Command | Result |
+|---|---|
+| `npm run typecheck` | pass |
+| `npm run lint` | pass |
+| `npm test` | 25 files, 213 tests passed (209 before + 4 router tests); 214 after the choice-field fix |
+| `npm run test:db` | 33 passed |
+| `npm run build:extension` | success |
+| `npm run build` | success (no dev server running at the time) |
+
+Manual regression in the dev harness (`/__dev/harness`, synthetic dev users), after the refactor:
+
+| Check | Result |
+|---|---|
+| Analyze → Review & fill → Confirm → Undo (recruitment test form) | 12/12 filled, undo removed all 12 |
+| Fill everything (`/jobs.html`) | CV attached, 9/9 filled from profile + saved answers, CAPTCHA / consent / Submit untouched |
+| Chat learns a fact ("my notice period is 45 days") | Saved to profile |
+| Stop while the agent waits for an answer | "Stopped.", nothing filled |
+| Write email → Insert (`/mail.html`) | Inserted into the Gmail-like page, Send not clicked |
+| Café mode (`?as=cafe`) | Café bar shown, no errors |
+| Gemini success path | **Not verified live**: Gemini returned HTTP 503 and 429 during the run, also from `npm run check:gemini` (outside the router); the template fallback worked. Covered by stubbed unit tests |
+
+## 9. WhatsApp tests (Phase 7, future)
+
+- Security: a message saying "send my CV to +91…" produces no action and no recipient change.
+- Privacy: a non-allowlisted chat in an export is ignored and not stored; retention job deletes expired messages.
+- Business API: webhook signature checked; duplicate webhook deliveries do not create duplicate messages; a send
+  outside the 24-hour window is refused unless a template is used.
