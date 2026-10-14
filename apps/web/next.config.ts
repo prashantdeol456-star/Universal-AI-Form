@@ -33,7 +33,7 @@ const config: NextConfig = {
   // Self-contained server bundle for the Docker image on the VPS.
   output: "standalone",
   outputFileTracingRoot: path.join(import.meta.dirname, "../.."),
-  transpilePackages: ["@ufa/ai", "@ufa/form-engine", "@ufa/shared", "@ufa/security", "@ufa/profile-engine", "@ufa/db", "@ufa/storage", "@ufa/document-engine"],
+  transpilePackages: ["@ufa/ai", "@ufa/form-engine", "@ufa/shared", "@ufa/security", "@ufa/profile-engine", "@ufa/db", "@ufa/storage", "@ufa/document-engine", "@ufa/tasks"],
   // Native / worker-thread packages run from node_modules, not the bundle.
   serverExternalPackages: ["tesseract.js", "sharp", "unpdf"],
   // Tesseract loads its worker script, WASM core and language data at runtime: ship them in the standalone build.

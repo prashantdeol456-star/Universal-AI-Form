@@ -20,6 +20,7 @@ COPY packages/storage/package.json packages/storage/
 COPY packages/document-engine/package.json packages/document-engine/
 COPY packages/ai/package.json packages/ai/
 COPY packages/form-engine/package.json packages/form-engine/
+COPY packages/tasks/package.json packages/tasks/
 COPY apps/extension/package.json apps/extension/
 RUN npm ci --no-audit --no-fund
 

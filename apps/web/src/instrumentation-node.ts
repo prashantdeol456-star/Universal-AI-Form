@@ -1,4 +1,5 @@
 import { startAccountMaintenance } from "./server/account/deletion";
+import { startTaskRunner } from "./server/tasks/runner";
 import { startCafeMaintenance } from "./server/cafe/customer";
 import { startDocumentWorker } from "./server/documents/worker";
 import { env } from "./server/env";
@@ -8,3 +9,4 @@ if (env().DOCUMENT_WORKER_ENABLED) startDocumentWorker();
 startLearningScheduler();
 startCafeMaintenance();
 startAccountMaintenance();
+startTaskRunner();

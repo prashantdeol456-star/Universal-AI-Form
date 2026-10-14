@@ -1,6 +1,7 @@
 import "server-only";
 import { NextResponse, type NextRequest } from "next/server";
 import { ZodError, type ZodType } from "zod";
+import { taskErrorInfo } from "@ufa/tasks";
 import { createRateLimiter, redact, type RateLimiter } from "@ufa/security";
 import { env } from "./env";
 import { recordRequest } from "./metrics";
@@ -100,6 +101,9 @@ async function handle<C>(handler: Handler<C>, req: NextRequest, ctx: C): Promise
       }
       return res;
     }
+    // Task engine errors carry their own HTTP status (404 not found, 409 invalid transition / lease lost / …).
+    const taskErr = taskErrorInfo(err);
+    if (taskErr) return json({ error: { code: taskErr.code, message: taskErr.message } }, { status: taskErr.status });
     if (err instanceof ZodError) {
       return json(
         {

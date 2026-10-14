@@ -244,3 +244,54 @@ export const assistantDraft = (body: { question: string; role?: string | null })
   request<{ answer: string; missing: string[]; source: "gemini" | "template"; canAskConsent: boolean }>("/api/extension/assistant/draft", { body });
 
 export const setAiProfileSharing = (enabled: boolean) => request<{ enabled: boolean }>("/api/account/ai-sharing", { body: { enabled } });
+
+// --- Tasks (persistent task engine) ---------------------------------------------------------
+
+export type TaskStatus = "queued" | "running" | "waiting_for_browser" | "waiting_for_approval" | "paused" | "completed" | "failed" | "cancelled";
+export type StepStatus = "pending" | "running" | "waiting" | "completed" | "failed" | "skipped" | "cancelled";
+
+export interface TaskSummary {
+  id: string;
+  title: string;
+  task_type: string;
+  status: TaskStatus;
+  error_message: string | null;
+  created_at: string;
+  steps_total: number;
+  steps_done: number;
+}
+export interface TaskStepView {
+  id: string;
+  step_key: string;
+  title: string;
+  status: StepStatus;
+  error_code: string | null;
+  error_message: string | null;
+  attempt_count: number;
+  output: string | null;
+}
+export interface TaskApprovalView {
+  id: string;
+  status: "pending" | "approved" | "rejected" | "expired";
+  action_summary: string;
+  expires_at: string;
+}
+export interface TaskDetail {
+  task: TaskSummary;
+  steps: TaskStepView[];
+  approvals: TaskApprovalView[];
+}
+export interface TaskEventView {
+  id: string;
+  event_type: string;
+  message: string;
+  created_at: string;
+}
+
+export const listTasks = () => request<{ tasks: TaskSummary[] }>("/api/tasks?limit=20");
+export const getTaskDetail = (id: string) => request<TaskDetail>(`/api/tasks/${id}`);
+export const getTaskEvents = (id: string) => request<{ events: TaskEventView[] }>(`/api/tasks/${id}/events?limit=15`);
+export const controlTask = (id: string, body: { action: "pause" | "resume" | "cancel" | "retry"; confirmUncertain?: boolean }) =>
+  request<{ status: TaskStatus }>(`/api/tasks/${id}/control`, { body });
+export const decideApproval = (id: string, decision: "approve" | "reject") => request(`/api/approvals/${id}`, { body: { decision } });
+

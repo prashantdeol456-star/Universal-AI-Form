@@ -57,6 +57,8 @@ const schema = z.object({
   // Which models may run: local_only never calls a cloud model; hybrid (default) = local/rules first, cloud as fallback.
   AI_ROUTING_MODE: z.enum(["local_only", "hybrid", "cloud_enabled"]).default("hybrid"),
   COMPOSE_DAILY_LIMIT: z.coerce.number().int().min(0).max(10_000).default(30),
+  // Persistent task engine runner (AI browser Phase 1). Several web containers are safe: tasks are leased.
+  TASKS_RUNNER_ENABLED: z.stringbool().default(true),
 
   // Learning engine: promotes mappings that several different users agree on (phase 9).
   LEARNING_ENABLED: z.stringbool().default(true),

@@ -18,6 +18,7 @@
     "@ufa/security": "*",
     "@ufa/shared": "*",
     "@ufa/storage": "*",
+    "@ufa/tasks": "*",
     "next": "^15.5.4",
     "nodemailer": "^10.0.16",
     "react": "^19.1.1",

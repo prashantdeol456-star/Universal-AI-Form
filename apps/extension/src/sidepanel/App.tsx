@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { ensureServerPermission, login, loginMfa, logout, me, type Me } from "./api";
 import { Compose } from "./Compose";
+import { TasksView } from "./TasksView";
 import { Main } from "./MainView";
 import { DEFAULT_SERVER_URL, getServerUrl, getSession, setServerUrl } from "./storage";
 
@@ -10,7 +11,7 @@ export function App() {
   const [view, setView] = useState<View>("loading");
   const [user, setUser] = useState<Me | null>(null);
   const [server, setServer] = useState(DEFAULT_SERVER_URL);
-  const [mode, setMode] = useState<"fill" | "email">("fill");
+  const [mode, setMode] = useState<"fill" | "email" | "tasks">("fill");
 
   const refreshUser = useCallback(async () => {
     setServer(await getServerUrl());
@@ -73,6 +74,9 @@ export function App() {
             <button role="tab" aria-selected={mode === "email"} onClick={() => setMode("email")}>
               Write email
             </button>
+            <button role="tab" aria-selected={mode === "tasks"} onClick={() => setMode("tasks")}>
+              Tasks
+            </button>
           </div>
           {/* Both stay mounted so switching tabs keeps the analysed form and the email chat. */}
           <div hidden={mode !== "fill"}>
@@ -81,6 +85,8 @@ export function App() {
           <div hidden={mode !== "email"}>
             <Compose server={server} />
           </div>
+          {/* Mounted only while open, so it polls the server only when visible. */}
+          {mode === "tasks" && <TasksView server={server} />}
         </>
       )}
     </div>

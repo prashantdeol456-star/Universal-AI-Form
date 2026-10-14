@@ -168,3 +168,12 @@ textarea:focus { outline: 2px solid color-mix(in srgb, var(--brand) 35%, transpa
 .log-line::before { content: ""; position: absolute; left: 3px; top: 7px; width: 5px; height: 5px; border-radius: 50%; background: var(--brand); }
 .log-line.ok { color: var(--ok); } .log-line.ok::before { background: var(--ok); }
 .log-line.warn { color: var(--rev); } .log-line.warn::before { background: var(--rev); }
+
+/* Tasks */
+.badge.ok { background: var(--ok-bg); color: var(--ok); }
+.badge.rev { background: var(--rev-bg); color: var(--rev); }
+.badge.man { background: var(--man-bg); color: var(--man); }
+.task-row { display: block; width: 100%; text-align: left; color: var(--text); cursor: pointer; }
+.task-row:hover { background: var(--hover); }
+.task-steps, .task-events { margin: 0; padding-left: 18px; }
+.task-steps > li + li, .task-events > li + li { margin-top: 6px; }

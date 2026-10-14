@@ -7,3 +7,4 @@ export * from "./schemas/auth";
 export * from "./schemas/profile";
 export * from "./profile/geo";
 export * from "./cafe";
+export * from "./tasks";
