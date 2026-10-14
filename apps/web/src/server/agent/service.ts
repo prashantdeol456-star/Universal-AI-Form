@@ -1,5 +1,5 @@
 import "server-only";
-import { extractChatFacts, GeminiProvider, templateAnswer, wordLimitOf, type AnswerDraft } from "@ufa/ai";
+import { extractChatFacts, templateAnswer, wordLimitOf, type AnswerDraft } from "@ufa/ai";
 import { normalizeLabel } from "@ufa/form-engine";
 import { getFieldDef, isCatalogKey } from "@ufa/shared";
 import { redact } from "@ufa/security";
@@ -7,6 +7,7 @@ import type { TransactionSql } from "@ufa/db";
 import { audit } from "../audit";
 import { asUser, decryptValue, encryptValue, type Actor } from "../db";
 import { readStored } from "../documents/conflicts";
+import { modelRouter } from "../ai/router";
 import { env } from "../env";
 import { badRequest, HttpError, notFound } from "../http";
 import { updateFieldTx } from "../profile/service";
@@ -145,13 +146,6 @@ const PRO_KEYS = [
   "education.graduation.specialization",
 ] as const;
 
-const g = globalThis as unknown as { __ufaAnswerGemini?: GeminiProvider | null };
-function gemini(): GeminiProvider | null {
-  if (g.__ufaAnswerGemini !== undefined) return g.__ufaAnswerGemini;
-  const e = env();
-  g.__ufaAnswerGemini = e.GEMINI_ENABLED && e.GEMINI_API_KEY ? new GeminiProvider({ apiKey: e.GEMINI_API_KEY, model: e.GEMINI_MODEL, baseUrl: e.GEMINI_BASE_URL }) : null;
-  return g.__ufaAnswerGemini;
-}
 
 export interface DraftResult extends AnswerDraft {
   source: "gemini" | "template";
@@ -177,8 +171,11 @@ export async function draftAnswer(actor: Actor, input: { question: string; role?
   });
   const maxWords = input.maxWords ?? wordLimitOf(input.question);
   const base = { question: redact(input.question).slice(0, 1000), role: input.role?.slice(0, 120) ?? null, maxWords, facts };
-  const provider = gemini();
-  if (provider && cloudAi && sharing && facts.length && usedToday < e.COMPOSE_DAILY_LIMIT) {
+  const router = modelRouter();
+  // Cloud needs both switches: cloud AI on, and consent to share the professional profile.
+  const decision = facts.length ? router.cloud("draft_answer", { consent: cloudAi && sharing, usedToday, dailyLimit: e.COMPOSE_DAILY_LIMIT }) : null;
+  if (decision?.allowed) {
+    const provider = decision.provider;
     const started = Date.now();
     try {
       const r = await provider.answerQuestion(base);
@@ -189,7 +186,7 @@ export async function draftAnswer(actor: Actor, input: { question: string; role?
       await record(actor, provider.model, Date.now() - started, false).catch(() => {});
     }
   }
-  return { ...templateAnswer(base), source: "template", canAskConsent: Boolean(provider && cloudAi && !sharing && facts.length) };
+  return { ...templateAnswer(base), source: "template", canAskConsent: Boolean(router.cloudAvailable("draft_answer") && cloudAi && !sharing && facts.length) };
 }
 
 async function record(actor: Actor, model: string, latencyMs: number, success: boolean, usage?: { inputTokens: number; outputTokens: number }) {

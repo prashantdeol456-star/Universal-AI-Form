@@ -54,6 +54,8 @@ const schema = z.object({
   AI_CONFIDENCE_THRESHOLD: z.coerce.number().min(0).max(1).default(0.9),
   AI_FALLBACK_THRESHOLD: z.coerce.number().min(0).max(1).default(0.7),
   // Email drafts written by Gemini per user per day (extension "Write email"); templates are used beyond it.
+  // Which models may run: local_only never calls a cloud model; hybrid (default) = local/rules first, cloud as fallback.
+  AI_ROUTING_MODE: z.enum(["local_only", "hybrid", "cloud_enabled"]).default("hybrid"),
   COMPOSE_DAILY_LIMIT: z.coerce.number().int().min(0).max(10_000).default(30),
 
   // Learning engine: promotes mappings that several different users agree on (phase 9).

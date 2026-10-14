@@ -1,7 +1,6 @@
 import "server-only";
 import {
   EMAIL_PLACEHOLDER_KEYS,
-  GeminiProvider,
   renderDraft,
   sanitizeDraft,
   templateDraft,
@@ -13,6 +12,7 @@ import { getFieldDef } from "@ufa/shared";
 import { redact } from "@ufa/security";
 import { asUser, db, type Actor } from "../db";
 import { readStored } from "../documents/conflicts";
+import { modelRouter } from "../ai/router";
 import { env } from "../env";
 
 /**
@@ -43,14 +43,13 @@ export interface ComposeResult {
   missing: Array<{ key: string; label: string }>;
 }
 
-const g = globalThis as unknown as { __ufaComposeGemini?: GeminiProvider | null };
-
-function gemini(): GeminiProvider | null {
-  if (g.__ufaComposeGemini !== undefined) return g.__ufaComposeGemini;
-  const e = env();
-  g.__ufaComposeGemini = e.GEMINI_ENABLED && e.GEMINI_API_KEY ? new GeminiProvider({ apiKey: e.GEMINI_API_KEY, model: e.GEMINI_MODEL, baseUrl: e.GEMINI_BASE_URL }) : null;
-  return g.__ufaComposeGemini;
-}
+/** Why a template was used instead of Gemini, by router decision. */
+const TEMPLATE_NOTICE = {
+  not_implemented: "AI writing is not enabled on this server, so a ready template was used.",
+  local_only: "AI writing is not enabled on this server, so a ready template was used.",
+  not_configured: "AI writing is not enabled on this server, so a ready template was used.",
+  no_consent: "You switched cloud AI off (Settings → AI assistance), so a ready template was used.",
+} as const;
 
 export async function composeEmail(actor: Actor, input: ComposeInput): Promise<ComposeResult> {
   const e = env();
@@ -72,11 +71,12 @@ export async function composeEmail(actor: Actor, input: ComposeInput): Promise<C
   let template: EmailDraft | null = null;
   let source: ComposeResult["source"] = "template";
   let notice: string | null = null;
-  const provider = gemini();
-  if (!provider) notice = "AI writing is not enabled on this server, so a ready template was used.";
-  else if (!cloudAiAllowed) notice = "You switched cloud AI off (Settings → AI assistance), so a ready template was used.";
-  else if (usedToday >= e.COMPOSE_DAILY_LIMIT) notice = `Daily limit of ${e.COMPOSE_DAILY_LIMIT} AI drafts reached, so a ready template was used.`;
-  else {
+  const decision = modelRouter().cloud("draft_email", { consent: cloudAiAllowed, usedToday, dailyLimit: e.COMPOSE_DAILY_LIMIT });
+  if (!decision.allowed) {
+    notice =
+      decision.reason === "over_budget" ? `Daily limit of ${e.COMPOSE_DAILY_LIMIT} AI drafts reached, so a ready template was used.` : TEMPLATE_NOTICE[decision.reason];
+  } else {
+    const provider = decision.provider;
     const started = Date.now();
     try {
       // Only the NAMES of details the user actually has (the full name always), so the model does not plan around empty ones.

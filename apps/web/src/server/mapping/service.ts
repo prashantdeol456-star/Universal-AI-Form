@@ -1,7 +1,6 @@
 import "server-only";
 import {
   AIOrchestrator,
-  GeminiProvider,
   LocalAIProvider,
   NOT_A_PROFILE_FIELD,
   type AiCallInfo,
@@ -29,6 +28,7 @@ import { detectFormChange, recordFormSignature, type FormChangeView } from "../f
 import { exampleSourceForFeedback, recordExamples } from "../learning/service";
 import { findSavedForm } from "../saved-forms/service";
 import { pgVectorStore } from "./vector-store";
+import { modelRouter } from "../ai/router";
 import { findSavedAnswers, normalizeQuestion } from "../agent/service";
 
 /**
@@ -68,15 +68,11 @@ const answerCache = (provider: string, model: string): AnswerCache => ({
 function orchestrator(): AIOrchestrator {
   if (g.__ufaOrchestrator) return g.__ufaOrchestrator;
   const e = env();
-  const localAi = e.LOCAL_AI_ENABLED
-    ? new LocalAIProvider({ baseUrl: e.LOCAL_AI_BASE_URL, model: e.LOCAL_AI_MODEL, embedModel: e.LOCAL_AI_EMBED_MODEL || undefined, apiKey: e.LOCAL_AI_API_KEY, timeoutMs: 60_000 })
-    : null;
-  // The Gemini key is read only here, on the server (spec §55); it is never sent to the extension.
-  const gemini =
-    e.GEMINI_ENABLED && e.GEMINI_API_KEY
-      ? new GeminiProvider({ apiKey: e.GEMINI_API_KEY, model: e.GEMINI_MODEL, baseUrl: e.GEMINI_BASE_URL, batchSize: e.GEMINI_MAX_FIELDS_PER_REQUEST })
-      : null;
-  if (e.GEMINI_ENABLED && !e.GEMINI_API_KEY) console.warn("[ai] GEMINI_ENABLED is true but GEMINI_API_KEY is empty: Gemini fallback is off");
+  const router = modelRouter();
+  const localAi = router.local("map_fields");
+  // Per-user consent and the daily field budget are applied per request by the orchestrator (allowCloudAi, geminiBudget).
+  const cloud = router.cloud("map_fields", { consent: true });
+  const gemini = cloud.allowed ? cloud.provider : null;
   g.__ufaOrchestrator = new AIOrchestrator({
     localAi,
     gemini,

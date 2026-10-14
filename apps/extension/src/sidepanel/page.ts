@@ -108,3 +108,20 @@ export async function attachFileInTab(tabId: number, file: { fieldId: string; na
     return { ok: false, error: "The page was reloaded. Analyze it again." };
   }
 }
+
+/** Opens `url` in the tab and waits until it has loaded (max 30 s), plus a moment for single-page apps to render. */
+export async function openUrlInTab(tabId: number, url: string): Promise<void> {
+  await chrome.tabs.update(tabId, { url });
+  await new Promise<void>((resolve) => {
+    const listener = (id: number, info: chrome.tabs.OnUpdatedInfo) => {
+      if (id === tabId && info.status === "complete") done();
+    };
+    const done = () => {
+      chrome.tabs.onUpdated.removeListener(listener);
+      resolve();
+    };
+    chrome.tabs.onUpdated.addListener(listener);
+    setTimeout(done, 30_000);
+  });
+  await new Promise((r) => setTimeout(r, 1500));
+}

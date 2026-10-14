@@ -7,3 +7,4 @@ export * from "./orchestrator";
 export * from "./learning";
 export * from "./training";
 export * from "./compose";
+export * from "./router";
