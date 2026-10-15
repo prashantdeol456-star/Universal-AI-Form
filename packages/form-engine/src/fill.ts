@@ -23,7 +23,7 @@ export interface FillInstruction {
 }
 
 export type FillReason =
-  | "manual_field" // CAPTCHA / OTP / password: never automated
+  | "manual_field" // CAPTCHA / OTP / password / payment: never automated
   | "not_fillable" // file upload or a control we do not write to
   | "no_option" // value is not one of the field's choices
   | "too_long"
@@ -32,6 +32,7 @@ export type FillReason =
   | "invalid_number"
   | "invalid_date"
   | "not_found" // element is gone (page changed)
+  | "stale_element" // the element now belongs to a different field (page re-rendered)
   | "hidden"
   | "disabled"
   | "has_value" // page already has a value and overwrite was not allowed
@@ -141,7 +142,7 @@ export function prepareValue(field: NormalizedField, ins: Pick<FillInstruction, 
 
 /** Plain-language explanation for the side panel. */
 export const FILL_REASON_TEXT: Record<FillReason, string> = {
-  manual_field: "Must be done by you (CAPTCHA / OTP / password)",
+  manual_field: "Must be done by you (CAPTCHA / OTP / password / payment)",
   not_fillable: "This kind of field is not filled automatically",
   no_option: "Your value is not one of the choices",
   too_long: "Your value is longer than the field allows",
@@ -150,6 +151,7 @@ export const FILL_REASON_TEXT: Record<FillReason, string> = {
   invalid_number: "Not a number",
   invalid_date: "Date could not be converted",
   not_found: "Field is no longer on the page",
+  stale_element: "The page changed this field; analyze the page again",
   hidden: "Field is hidden right now",
   disabled: "Field is disabled or read-only",
   has_value: "Already has a value on the page (not replaced)",

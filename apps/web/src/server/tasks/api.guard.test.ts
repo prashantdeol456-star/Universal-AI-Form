@@ -14,11 +14,11 @@ const routeFiles = (dir: string): string[] =>
     const p = path.join(dir, f);
     return statSync(p).isDirectory() ? routeFiles(p) : f === "route.ts" ? [p] : [];
   });
-const files = [...routeFiles(path.join(API, "tasks")), ...routeFiles(path.join(API, "approvals"))];
+const files = [...routeFiles(path.join(API, "tasks")), ...routeFiles(path.join(API, "approvals")), ...routeFiles(path.join(API, "sites"))];
 
 describe("task API route guards", () => {
-  it("covers all task and approval routes", () => {
-    expect(files.length).toBe(8);
+  it("covers all task, approval and site routes", () => {
+    expect(files.length).toBe(11);
   });
 
   for (const file of files) {

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { FillResult, FormSnapshot, NormalizedField } from "@ufa/form-engine";
+import type { VerifyStatus } from "@ufa/form-engine/dom";
 import { FILL_REASON_TEXT } from "@ufa/form-engine/fill";
 import type { ConfirmItem, FieldMappingView, MapResult } from "./api";
 
@@ -13,6 +14,8 @@ export interface Choice {
   include: boolean;
   manualValue: string;
   overwrite: boolean;
+  /** The user replaced the profile value with their own for this form only. */
+  override?: boolean;
 }
 export type Selection = Record<string, Choice>;
 
@@ -52,8 +55,8 @@ export function plannedItems(snapshot: FormSnapshot, mapping: MapResult | null, 
     const m = byId.get(f.id);
     const c = choiceFor(sel, f, m);
     if (!c.include || !isFillable(f)) continue;
-    if (hasProfileValue(m)) out.push({ field: f, mapping: m, choice: c, source: "profile", display: m!.optionMatch ?? m!.value! });
-    else if (canTypeManually(f, m) && c.manualValue.trim()) out.push({ field: f, mapping: m, choice: c, source: "manual", display: c.manualValue.trim() });
+    if (hasProfileValue(m) && !(c.override && c.manualValue.trim())) out.push({ field: f, mapping: m, choice: c, source: "profile", display: m!.optionMatch ?? m!.value! });
+    else if ((canTypeManually(f, m) || (c.override && hasProfileValue(m))) && c.manualValue.trim()) out.push({ field: f, mapping: m, choice: c, source: "manual", display: c.manualValue.trim() });
   }
   return out;
 }
@@ -90,6 +93,19 @@ export function FillControl({ field: f, m, choice, onChange }: { field: Normaliz
 
   return (
     <div className="fill-ctl">
+      {fromProfile && !choice.override && (
+        <button className="link small" onClick={() => onChange({ ...choice, override: true, manualValue: "" })}>
+          Use a different value for this form
+        </button>
+      )}
+      {fromProfile && choice.override && (
+        <>
+          <ManualInput field={f} value={choice.manualValue} onChange={(v) => onChange({ ...choice, manualValue: v, include: v.trim() !== "" })} />
+          <button className="link small" onClick={() => onChange({ ...choice, override: false, manualValue: "" })}>
+            Use my profile value
+          </button>
+        </>
+      )}
       {manual && (
         <ManualInput
           field={f}
@@ -141,6 +157,15 @@ function ManualInput({ field: f, value, onChange }: { field: NormalizedField; va
   );
 }
 
+/** Where a previewed value comes from, in words: verified fact, profile value, AI match or the user's own text. */
+export function sourceText(i: PlannedItem): string {
+  if (i.source === "manual") return i.choice.override ? "typed by you (replaces your profile value here)" : i.mapping?.savedAnswer && i.mapping.savedAnswer === i.display ? "your saved answer" : "typed by you";
+  const m = i.mapping!;
+  const pct = `${Math.round(m.confidence * 100)}%`;
+  const via = m.sources.includes("gemini") || m.sources.includes("local_ai") ? "AI match, please check" : m.sources.some((s) => s.startsWith("kb_")) ? "matched before" : "matched by its label";
+  return `${m.profileFieldLabel ?? m.profileFieldKey} · ${m.valueVerified ? "verified in your profile" : "from your profile (not verified)"} · ${via} · ${pct}`;
+}
+
 /** Everything that will be typed into the page, shown before anything happens. */
 export function PreviewView({
   snapshot,
@@ -179,8 +204,8 @@ export function PreviewView({
                 <td>{i.field.label}</td>
                 <td>
                   <b>{i.display}</b>
-                  {i.source === "manual" && <span className="tag">typed by you</span>}
-                  {i.mapping && i.mapping.decision !== "AUTO_FILL" && <span className="tag review">you checked</span>}
+                  <div className="small muted">{sourceText(i)}</div>
+                  {i.mapping && i.source === "profile" && i.mapping.decision !== "AUTO_FILL" && <span className="tag review">you checked</span>}
                   {i.choice.overwrite && <span className="tag">replaces page value</span>}
                 </td>
               </tr>
@@ -222,6 +247,12 @@ export interface FillOutcome {
   status: "CONFIRMED" | "SUBMITTED" | "CANCELLED";
   /** Filled by a café operator for this customer. */
   customerName?: string | null;
+  /** The fill task (task engine) this fill belongs to. */
+  taskId?: string;
+  /** Each filled field re-read from the page afterwards. */
+  verification?: Record<string, VerifyStatus>;
+  /** The page changed while filling: the task was paused for the user to check. */
+  pageChanged?: boolean;
 }
 
 /** What happened on the page, with undo and "I submitted it". */
@@ -233,6 +264,8 @@ export function ResultView({
   onUndo,
   onSubmitted,
   onDone,
+  onNextPage,
+  onFinishTask,
 }: {
   outcome: FillOutcome;
   labels: Map<string, string>;
@@ -241,10 +274,17 @@ export function ResultView({
   onUndo: () => void;
   onSubmitted: (applicationNumber: string) => void;
   onDone: () => void;
+  /** Multi-page forms: the user already moved to the next page on the website. */
+  onNextPage?: () => void;
+  /** The user reviewed everything and submits on the website themselves. */
+  onFinishTask?: () => void;
 }) {
   const [number, setNumber] = useState("");
   const filled = outcome.results.filter((r) => r.status === "filled");
   const notFilled = outcome.results.filter((r) => r.status !== "filled");
+  const v = Object.values(outcome.verification ?? {});
+  const vCount = (st: VerifyStatus) => v.filter((x) => x === st).length;
+  const changed = Object.entries(outcome.verification ?? {}).filter(([, st]) => st !== "verified");
 
   return (
     <div className="stack">
@@ -256,8 +296,33 @@ export function ResultView({
           <div>
             <div className="title">{outcome.undone ? "Fill undone" : `Filled ${filled.length} of ${outcome.results.length} fields`}</div>
             {!outcome.undone && <div className="small muted">Filled fields have a green outline on the page.</div>}
+            {!outcome.undone && v.length > 0 && (
+              <div className="small">
+                Checked on the page: <b>{vCount("verified")}</b> correct
+                {vCount("mismatch") > 0 && <> · <b>{vCount("mismatch")}</b> changed by the page</>}
+                {vCount("missing") + vCount("stale") > 0 && <> · <b>{vCount("missing") + vCount("stale")}</b> no longer there</>}
+              </div>
+            )}
           </div>
         </div>
+        {outcome.pageChanged && !outcome.undone && (
+          <div className="warn small">The page changed while filling, so the task was paused. Check the page; then retry or cancel the task in the Tasks tab.</div>
+        )}
+        {changed.length > 0 && !outcome.undone && (
+          <ul className="fields">
+            {changed.map(([id, st]) => (
+              <li key={id}>
+                <button className="field" onClick={() => onHighlight(id)} title="Show on page">
+                  <span className="label">
+                    {labels.get(id) ?? id}
+                    <span className="tag review">{st === "mismatch" ? "Check value" : "Gone"}</span>
+                  </span>
+                  <span className="meta">{st === "mismatch" ? "The page shows a different value than was filled" : "The field is no longer on the page"}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
         {notFilled.length > 0 && !outcome.undone && (
           <ul className="fields">
             {notFilled.map((r) => (
@@ -301,6 +366,27 @@ export function ResultView({
             </div>
           </div>
         )
+      )}
+      {outcome.taskId && !outcome.undone && !outcome.pageChanged && (onNextPage || onFinishTask) && (
+        <div className="card">
+          <div className="eyebrow">Fill task</div>
+          <div className="small">
+            Multi-page form? Click the website&apos;s own Next / Continue button yourself, then continue the task on the new page. The assistant never clicks
+            those buttons.
+          </div>
+          <div className="row-actions">
+            {onNextPage && (
+              <button className="secondary" onClick={onNextPage} disabled={busy}>
+                I moved to the next page, continue here
+              </button>
+            )}
+            {onFinishTask && (
+              <button className="secondary" onClick={onFinishTask} disabled={busy}>
+                All pages done, close the task
+              </button>
+            )}
+          </div>
+        </div>
       )}
       <button className="link small" onClick={onDone}>
         Back to the form

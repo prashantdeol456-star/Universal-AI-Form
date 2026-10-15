@@ -374,6 +374,27 @@ function stableId(el: Element): string {
   return id;
 }
 
+/**
+ * The field signature of a live element, computed exactly as detectForm does. Used before
+ * filling and when verifying: if a page re-used an element for another field (common in
+ * single-page apps), the signature no longer matches and the element is treated as stale.
+ */
+export function liveSignature(el: Element): string | null {
+  const kind = kindOf(el as Control);
+  if (!kind) return null;
+  const name = el.getAttribute("name");
+  let label: LabelResult;
+  if ((kind === "radio" || kind === "checkbox") && name) {
+    const scope = el.closest("form") ?? rootOf(el);
+    const members = [...scope.querySelectorAll<HTMLInputElement>(`input[type=${kind}][name="${esc(name)}"]`)];
+    label = kind === "radio" || members.length > 1 ? groupLabel(members[0] ?? el) : resolveLabel(el as Control);
+  } else {
+    label = resolveLabel(el as Control);
+  }
+  const labelText = label.text || "(unlabelled field)";
+  return fnv1a(`${kind}|${(name ?? el.getAttribute("id") ?? "").toLowerCase()}|${normalizeLabel(labelText)}`);
+}
+
 export interface DetectOptions {
   maxFields?: number;
 }

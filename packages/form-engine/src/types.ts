@@ -19,7 +19,8 @@ export type FieldKind =
   | "contenteditable";
 
 /** Why a field must be handled by a human (spec §64): never automated. */
-export type ManualReason = "captcha" | "otp" | "password" | "unsupported_control";
+/** Fields the assistant never fills: the user does them (payment: card / CVV / UPI PIN; suspicious: label tries to instruct an AI). */
+export type ManualReason = "captcha" | "otp" | "password" | "payment" | "suspicious" | "unsupported_control";
 
 export interface NormalizedField {
   /** Stable within one page load (also set as data-ufa-id on the element). */

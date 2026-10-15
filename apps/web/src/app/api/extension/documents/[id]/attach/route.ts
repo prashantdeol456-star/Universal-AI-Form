@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { requireUser } from "@/server/auth/session";
 import { readDocumentForAttach } from "@/server/documents/service";
+import { assertHostAllowed } from "@/server/sites/service";
 import { clientIp, parseBody, rateLimit, route } from "@/server/http";
 
 const bodySchema = z.object({ domain: z.string().trim().min(1).max(253).regex(/^[a-z0-9.-]+$/i) });
@@ -12,6 +13,7 @@ export const POST = route<{ params: Promise<{ id: string }> }>(async (req: NextR
   rateLimit("doc-attach", user.id, 30, 10 * 60_000);
   const id = z.uuid().parse((await params).id);
   const { domain } = await parseBody(req, bodySchema);
+  await assertHostAllowed(user, domain, "attach_file");
   const { data, mime, filename } = await readDocumentForAttach(user, id, domain.toLowerCase(), clientIp(req));
   return new Response(new Uint8Array(data), {
     headers: {

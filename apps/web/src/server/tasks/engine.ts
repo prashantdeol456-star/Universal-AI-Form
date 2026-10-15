@@ -1,6 +1,7 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import { COMPOSE_LANGUAGES, COMPOSE_TONES } from "@ufa/ai";
+import { checkUrl, sameOrigin } from "@ufa/form-engine";
 import { createTaskEngine, TaskError, type ApprovalSpec, type JsonObject, type ServerStepHandler, type TaskEngine, type TaskTemplate } from "@ufa/tasks";
 import { z } from "zod";
 import { draftAnswer, saveAnswer } from "../agent/service";
@@ -44,6 +45,12 @@ const fillFormInput = z.object({
 });
 type FillFormInput = z.infer<typeof fillFormInput>;
 
+/** Read + fill steps of one page of a form (fill is not safe to repeat blindly). */
+const pageSteps = (n: number) => [
+  { key: `read_${n}`, type: "browser.read_page" as const, title: n === 1 ? "Read the form on the page" : `Read page ${n}`, idempotent: true, sequence: 2 * n - 2, input: { page: n } },
+  { key: `fill_${n}`, type: "browser.fill_fields" as const, title: n === 1 ? "Fill the approved fields" : `Fill page ${n}`, idempotent: false, sequence: 2 * n - 1, input: { page: n } },
+];
+
 const templates: Record<string, TaskTemplate> = {
   draft_email: {
     parse: parseWith(draftEmailInput),
@@ -62,13 +69,19 @@ const templates: Record<string, TaskTemplate> = {
     ],
   } satisfies TaskTemplate<DraftAnswersInput>,
   fill_form: {
-    parse: parseWith(fillFormInput),
+    parse: (input) => {
+      const parsed = parseWith(fillFormInput)(input);
+      const c = checkUrl(parsed.url);
+      if (!c.ok) throw new TaskError("invalid_input", c.reason);
+      return parsed;
+    },
     defaultTitle: (i) => `Fill form: ${new URL((i as FillFormInput).url).hostname}`,
-    steps: () => [
-      { key: "read", type: "browser.read_page", title: "Read the form on the page", idempotent: true },
-      { key: "fill", type: "browser.fill_fields", title: "Fill the fields", idempotent: false },
-      { key: "submit", type: "approval.confirm_submission", title: "You review and submit the form yourself" },
-    ],
+    steps: () => [...pageSteps(1), { key: "review", type: "approval.confirm_submission", title: "You review and submit the form yourself", sequence: 1000 }],
+    // Page N is added only after the user moved there themselves, and only on the same site.
+    nextPage: (i, n, url) => {
+      if (!sameOrigin((i as FillFormInput).url, url)) throw new TaskError("invalid_input", `This page is on a different website (${checkUrl(url).ok ? new URL(url).hostname : "invalid address"}); the task stays on ${new URL((i as FillFormInput).url).hostname}`);
+      return pageSteps(n);
+    },
   } satisfies TaskTemplate<FillFormInput>,
 };
 
@@ -115,8 +128,9 @@ const approvals: Record<string, ApprovalSpec> = {
   },
   "approval.confirm_submission": {
     actionType: "form.review_before_submit",
-    summary: (ctx) => `Review the filled form on ${new URL((ctx.taskInput as FillFormInput).url).hostname}; you submit it yourself`,
-    payload: (ctx) => ({ url: (ctx.taskInput as FillFormInput).url }),
+    summary: (ctx) => `Check the filled form on ${new URL((ctx.taskInput as FillFormInput).url).hostname} and submit it yourself. Approving only closes this task; nothing is submitted for you.`,
+    // Bound to the site and the number of filled pages: a page added later needs a new approval.
+    payload: (ctx) => ({ origin: new URL((ctx.taskInput as FillFormInput).url).origin, pages: Object.keys(ctx.previous).filter((k) => k.startsWith("fill_")).length }),
   },
 };
 

@@ -173,7 +173,8 @@ export function createTaskEngine(opts: EngineOptions) {
       for (const s of steps) {
         const idempotent = s.idempotent ?? !s.type.startsWith("browser.");
         await tx`insert into task_steps (task_id, user_id, step_key, step_type, title, idempotent, input_json, sequence_number)
-                 values (${task!.id}, ${actor.id}, ${s.key}, ${s.type}, ${clip(s.title, 200)}, ${idempotent}, ${tx.json(s.input ?? {})}, ${n++})`;
+                 values (${task!.id}, ${actor.id}, ${s.key}, ${s.type}, ${clip(s.title, 200)}, ${idempotent}, ${tx.json(s.input ?? {})}, ${s.sequence ?? n})`;
+        n++;
       }
       await event(tx, task!, "task.created", `Task created with ${steps.length} step${steps.length === 1 ? "" : "s"}`, { type: input.taskType });
       return { task: task!, created: true };
@@ -324,13 +325,44 @@ export function createTaskEngine(opts: EngineOptions) {
     return outcome;
   }
 
+  /**
+   * Multi-page forms: the user moved to the next page themselves (the assistant never clicks
+   * Next) and asks to continue. Adds that page's steps before the final step; the template
+   * refuses pages on another site. Only while the task waits for the final review.
+   */
+  async function addPage(actor: Actor, id: string, url: string) {
+    return asUser(actor, async (tx) => {
+      const task = await lockTask(tx, id);
+      const template = opts.templates[task.task_type];
+      if (!template?.nextPage) throw new TaskError("invalid_input", "This task has no pages");
+      if (task.status !== "waiting_for_approval") throw new TaskError("invalid_input", "Finish the current page before adding the next one");
+      const steps = await stepsOf(tx, id);
+      const pageNumber = steps.filter((s) => s.step_type.startsWith("browser.") && s.step_key.startsWith("read_")).length + 1;
+      if (pageNumber > 50) throw new TaskError("invalid_input", "A task can have at most 50 pages");
+      const added = template.nextPage(task.input_json, pageNumber, url);
+      for (const s of added) {
+        if (!s.type.startsWith("browser.")) throw new TaskError("invalid_input", "Pages can only add browser steps");
+        await tx`insert into task_steps (task_id, user_id, step_key, step_type, title, idempotent, input_json, sequence_number)
+                 values (${id}, ${task.user_id}, ${s.key}, ${s.type}, ${clip(s.title, 200)}, ${s.idempotent ?? false}, ${tx.json(s.input ?? {})}, ${s.sequence ?? 900 + pageNumber})`;
+      }
+      // The final review must be asked again after the new page, so the open request lapses.
+      const waiting = steps.filter((s) => s.step_type.startsWith("approval.") && s.status === "waiting");
+      await tx`update approvals set status = 'expired' where task_id = ${id} and status = 'pending'`;
+      for (const s of waiting) await setStep(tx, s, "pending");
+      const t = await setTask(tx, task, "queued");
+      await event(tx, t, "task.page_added", `Continuing on page ${pageNumber}`, { page: pageNumber });
+      return t;
+    });
+  }
+
   // ------------------------------------------------------------------ browser worker (the user's extension)
 
   /** The user's extension claims its next browser step. Only the caller's own tasks are visible (RLS). */
-  async function claimBrowserStep(actor: Actor, workerId: string) {
+  async function claimBrowserStep(actor: Actor, workerId: string, taskId?: string | null) {
     return asUser(actor, async (tx) => {
+      // A worker acting on one page claims that page's task only.
       const [task] = await tx<TaskRow[]>`
-        select * from tasks where user_id = ${actor.id} and status = 'waiting_for_browser'
+        select * from tasks where user_id = ${actor.id} and status = 'waiting_for_browser' ${taskId ? tx`and id = ${taskId}` : tx``}
          order by priority desc, created_at for update skip locked limit 1`;
       if (!task) return null;
       const steps = await stepsOf(tx, task.id);
@@ -628,6 +660,7 @@ export function createTaskEngine(opts: EngineOptions) {
     cancel,
     retry,
     decideApproval,
+    addPage,
     claimBrowserStep,
     reportStep,
     saveCheckpoint,

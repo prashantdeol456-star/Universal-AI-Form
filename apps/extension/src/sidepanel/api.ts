@@ -295,3 +295,32 @@ export const controlTask = (id: string, body: { action: "pause" | "resume" | "ca
   request<{ status: TaskStatus }>(`/api/tasks/${id}/control`, { body });
 export const decideApproval = (id: string, decision: "approve" | "reject") => request(`/api/approvals/${id}`, { body: { decision } });
 
+
+// --- Site access (Phase 2) ---------------------------------------------------------------------
+
+export interface SitePermission {
+  id: string;
+  origin: string;
+  scopes: Array<"inspect" | "fill" | "attach_file" | "insert_text">;
+}
+export const listSitePermissions = () => request<{ sites: SitePermission[] }>("/api/sites").then((r) => r.sites);
+export const grantSitePermission = (url: string, scopes: SitePermission["scopes"]) => request<{ site: SitePermission }>("/api/sites", { body: { url, scopes } });
+export const revokeSitePermission = (id: string) => request(`/api/sites/${id}`, { method: "DELETE" });
+
+// --- Browser steps of fill tasks (Phase 2) ------------------------------------------------------
+
+export interface BrowserClaim {
+  task: { id: string; title: string; task_type: string; input_json: Record<string, unknown> };
+  step: { id: string; step_key: string; step_type: string; title: string; input_json: Record<string, unknown> };
+  leaseToken: string;
+}
+export const createFillTask = (url: string, idempotencyKey: string) =>
+  request<{ task: { id: string; status: TaskStatus } }>("/api/tasks", { body: { taskType: "fill_form", input: { url }, idempotencyKey } });
+export const claimBrowserStep = (workerId: string, taskId: string) =>
+  request<{ claim: BrowserClaim | null }>("/api/tasks/worker/claim", { body: { workerId, taskId } }).then((r) => r.claim);
+export const reportBrowserStep = (
+  taskId: string,
+  stepId: string,
+  body: { leaseToken: string; outcome: "progress" | "completed" | "failed" | "uncertain"; message?: string; result?: Record<string, unknown>; checkpoint?: Record<string, unknown> },
+) => request(`/api/tasks/${taskId}/steps/${stepId}/report`, { body });
+export const addTaskPage = (taskId: string, url: string) => request<{ status: TaskStatus }>(`/api/tasks/${taskId}/pages`, { body: { url } });

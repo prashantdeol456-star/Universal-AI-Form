@@ -1,7 +1,7 @@
 import { prepareValue, type FillInstruction, type FillReason, type FillResult } from "../fill";
 import { cleanLabel } from "../text";
 import type { NormalizedField } from "../types";
-import { choiceLabelOf, isVisible, PLACEHOLDER_OPTION, textOf } from "./detect";
+import { choiceLabelOf, isVisible, liveSignature, PLACEHOLDER_OPTION, textOf } from "./detect";
 import { hideCursor, pointAt, typeProgressively } from "./visual";
 
 /**
@@ -278,6 +278,8 @@ async function fillOne(doc: Document, item: FillItem, opts: Required<FillOptions
 
   const el = findFieldElement(doc, field.id);
   if (!el) return fail("not_found");
+  // The element must still be the field the user reviewed (pages re-use elements for other fields).
+  if (liveSignature(el) !== field.signature) return fail("stale_element");
   const tag = el.tagName;
   const type = (el as HTMLInputElement).type?.toLowerCase();
 

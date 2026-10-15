@@ -80,6 +80,8 @@ const ACTIONS: Record<string, string> = {
   "profile.sensitive_revealed": "Sensitive value viewed",
   "privacy.data_exported": "Data exported",
   "privacy.deletion_requested": "Account deletion scheduled",
+  "site.authorized": "Allowed the assistant on a website",
+  "site.revoked": "Removed the assistant's access to a website",
   "privacy.ai_profile_sharing_on": "Allowed AI to use your professional profile for answers",
   "privacy.ai_profile_sharing_off": "Stopped AI from using your professional profile",
   "agent.answer_saved": "Answer saved by the assistant",

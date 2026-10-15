@@ -1,8 +1,9 @@
-import { acceptsFile } from "@ufa/form-engine";
+import { acceptsFile, type ActionDecision } from "@ufa/form-engine";
 import type { UploadField } from "@ufa/form-engine/dom";
 import { useEffect, useState } from "react";
 import { fetchDocumentForAttach, listAttachableDocuments, type AttachableDocument } from "./api";
 import { attachFileInTab } from "./page";
+import { authorizeSite, decide } from "./siteAccess";
 
 /**
  * Upload fields on the page ("Upload your resume", photo, signature): the user
@@ -16,12 +17,32 @@ const REASON: Record<string, string> = {
   disabled: "The upload box is disabled right now.",
 };
 
-export function UploadsCard({ tabId, domain, fields, server }: { tabId: number; domain: string; fields: UploadField[]; server: string }) {
+export function UploadsCard({ tabId, url, domain, fields, server }: { tabId: number; url: string | null; domain: string; fields: UploadField[]; server: string }) {
   const [docs, setDocs] = useState<AttachableDocument[] | null>(null);
   const [choice, setChoice] = useState<Record<string, string>>({});
   const [result, setResult] = useState<Record<string, { ok: boolean; text: string }>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Attaching documents is its own site permission (separate from filling).
+  const [access, setAccess] = useState<ActionDecision | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    decide("attach_file", url)
+      .then((d) => live && setAccess(d))
+      .catch((err: unknown) => live && setAccess({ allowed: false, fix: "invalid_url", reason: err instanceof Error ? err.message : String(err) }));
+    return () => {
+      live = false;
+    };
+  }, [url]);
+
+  async function allowAttach() {
+    if (!url) return;
+    const a = await authorizeSite(url, ["attach_file"]);
+    if (!a.ok) return setError(a.error);
+    setError(null);
+    setAccess(await decide("attach_file", url));
+  }
 
   useEffect(() => {
     listAttachableDocuments()
@@ -37,13 +58,11 @@ export function UploadsCard({ tabId, domain, fields, server }: { tabId: number; 
 
   async function attach(f: UploadField) {
     const id = choice[f.id] ?? defaultFor(f);
-    if (!id) return;
+    if (!id || !access?.allowed) return;
     setBusy(f.id);
     try {
-      const file = await fetchDocumentForAttach(id, domain);
-      const r = await attachFileInTab(tabId, { fieldId: f.id, ...file });
-      const text = !r.ok ? r.error : r.outcome.ok ? `Attached “${r.outcome.fileName}”. Check it on the page (some sites now read it and fill the next steps).` : REASON[r.outcome.reason]!;
-      setResult((x) => ({ ...x, [f.id]: { ok: r.ok && r.outcome.ok, text } }));
+      const res = await attachDocument(tabId, domain, f.id, id);
+      setResult((x) => ({ ...x, [f.id]: res.ok ? { ok: true, text: `${res.text} Check it on the page (some sites now read it and fill the next steps).` } : res }));
     } catch (err) {
       setResult((x) => ({ ...x, [f.id]: { ok: false, text: err instanceof Error ? err.message : String(err) } }));
     } finally {
@@ -55,6 +74,16 @@ export function UploadsCard({ tabId, domain, fields, server }: { tabId: number; 
     <div className="card">
       <div className="eyebrow">Upload fields on this page</div>
       {error && <div className="alert">{error}</div>}
+      {access && !access.allowed && (
+        <div className="warn small">
+          {access.reason}.{" "}
+          {access.fix === "authorize_site" && (
+            <button className="link small" onClick={() => void allowAttach()}>
+              Allow attaching documents on this site
+            </button>
+          )}
+        </div>
+      )}
       {docs && docs.length === 0 && (
         <p className="small" style={{ margin: 0 }}>
           You have no documents yet.{" "}
@@ -83,7 +112,7 @@ export function UploadsCard({ tabId, domain, fields, server }: { tabId: number; 
                     </option>
                   ))}
                 </select>
-                <button className="primary" disabled={!value || busy === f.id} onClick={() => void attach(f)}>
+                <button className="primary" disabled={!value || busy === f.id || !access?.allowed} onClick={() => void attach(f)}>
                   {busy === f.id ? "Attaching…" : "Attach"}
                 </button>
               </div>
@@ -99,27 +128,29 @@ export function UploadsCard({ tabId, domain, fields, server }: { tabId: number; 
   );
 }
 
-/**
- * Agent step: attach the matching document to each empty upload field that clearly
- * asks for it (resume, photo, signature…). Returns one log line per field.
- */
-export async function autoAttach(tabId: number, domain: string, fields: UploadField[]): Promise<Array<{ ok: boolean; text: string }>> {
+/** A document the assistant may offer for an empty upload field that clearly asks for it (CV, photo…). The user still decides per file. */
+export interface AttachSuggestion {
+  field: UploadField;
+  doc: AttachableDocument | null;
+  /** "CV", "photo", "signature"… */
+  what: string;
+}
+
+export async function attachSuggestions(fields: UploadField[]): Promise<AttachSuggestion[]> {
   const wanted = fields.filter((f) => f.fileCount === 0 && f.suggested);
   if (!wanted.length) return [];
   const docs = await listAttachableDocuments();
-  const out: Array<{ ok: boolean; text: string }> = [];
-  for (const f of wanted) {
-    const doc = docs.find((d) => d.documentType === f.suggested && acceptsFile(f.accept, d.fileName, d.mimeType));
-    const what = f.suggested === "resume" ? "CV" : f.suggested!.replace(/_/g, " ");
-    if (!doc) {
-      out.push({ ok: false, text: `No ${what} of an accepted type in your documents — upload it in Dashboard → Documents, or choose a file on the page.` });
-      continue;
-    }
-    const file = await fetchDocumentForAttach(doc.id, domain);
-    const r = await attachFileInTab(tabId, { fieldId: f.id, ...file });
-    if (!r.ok) out.push({ ok: false, text: `Could not attach your ${what}: ${r.error}` });
-    else if (r.outcome.ok) out.push({ ok: true, text: `Attached your ${what} “${file.name}”.` });
-    else out.push({ ok: false, text: `Could not attach your ${what}: ${REASON[r.outcome.reason]}` });
-  }
-  return out;
+  return wanted.map((f) => ({
+    field: f,
+    doc: docs.find((d) => d.documentType === f.suggested && acceptsFile(f.accept, d.fileName, d.mimeType)) ?? null,
+    what: f.suggested === "resume" ? "CV" : f.suggested!.replace(/_/g, " "),
+  }));
+}
+
+/** Attaches one document the user chose to one upload field (the server checks the attach_file grant for the site). */
+export async function attachDocument(tabId: number, domain: string, fieldId: string, documentId: string): Promise<{ ok: boolean; text: string }> {
+  const file = await fetchDocumentForAttach(documentId, domain);
+  const r = await attachFileInTab(tabId, { fieldId, ...file });
+  if (!r.ok) return { ok: false, text: r.error };
+  return r.outcome.ok ? { ok: true, text: `Attached “${r.outcome.fileName}”.` } : { ok: false, text: REASON[r.outcome.reason]! };
 }

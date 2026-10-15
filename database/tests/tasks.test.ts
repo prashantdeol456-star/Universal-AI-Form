@@ -8,6 +8,7 @@ import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDb, ensureAppRole, migrate, withUser, type Db } from "../../packages/db/src";
 import { TaskTransitionError } from "../../packages/shared/src/tasks";
+import { sameOrigin } from "../../packages/form-engine/src/policy";
 import { createTaskEngine, TaskError, type ApprovalSpec, type ServerStepHandler, type TaskEngine, type TaskTemplate } from "../../packages/tasks/src";
 
 const OWNER_URL = process.env.TEST_DATABASE_URL;
@@ -41,6 +42,11 @@ run("task engine (0016)", () => {
     },
   };
   const approvals: Record<string, ApprovalSpec> = {
+    "approval.review": {
+      actionType: "form.review_before_submit",
+      summary: () => "Review and submit yourself",
+      payload: (ctx) => ({ origin: new URL(String(ctx.taskInput.url)).origin, pages: Object.keys(ctx.previous).filter((k) => k.startsWith("fill_")).length }),
+    },
     "approval.ok": {
       actionType: "test.write",
       summary: () => "Write test data",
@@ -63,6 +69,22 @@ run("task engine (0016)", () => {
       { key: "ok", type: "approval.ok", title: "Approve" },
     ]),
     browser: tpl(() => [{ key: "read", type: "browser.read_page", title: "Read page" }]),
+    paged: {
+      parse: (i) => i as { url: string },
+      defaultTitle: () => "Paged form",
+      steps: () => [
+        { key: "read_1", type: "browser.read_page", title: "Read page 1", sequence: 0 },
+        { key: "fill_1", type: "browser.fill_fields", title: "Fill page 1", idempotent: false, sequence: 1 },
+        { key: "review", type: "approval.review", title: "Review and submit yourself", sequence: 1000 },
+      ],
+      nextPage: (i, n, url) => {
+        if (!sameOrigin((i as { url: string }).url, url)) throw new TaskError("invalid_input", "different website");
+        return [
+          { key: `read_${n}`, type: "browser.read_page", title: `Read page ${n}`, sequence: 2 * n - 2 },
+          { key: `fill_${n}`, type: "browser.fill_fields", title: `Fill page ${n}`, idempotent: false, sequence: 2 * n - 1 },
+        ];
+      },
+    } as TaskTemplate,
   };
   const make = (o: { leaseMs?: number; approvalTtlMs?: number } = {}): TaskEngine =>
     createTaskEngine({ db, templates, serverHandlers: handlers, approvals, encrypt: (s) => `enc:${s}`, decrypt: (s) => s.replace(/^enc:/, ""), ...o });
@@ -360,6 +382,59 @@ run("task engine (0016)", () => {
     expect(v2.task.status).toBe("paused");
     expect(v2.steps[0]).toMatchObject({ status: "waiting", error_code: "needs_verification" });
     await engine.cancel(actor("t_alice"), second.id);
+  });
+
+  it("multi-page forms: pages added by the user stay on the same site, checkpoints per page, and the final review is asked again", async () => {
+    const run = async (taskId: string, page: number) => {
+      for (const kind of ["read", "fill"]) {
+        await drain();
+        const c = (await engine.claimBrowserStep(actor("t_alice"), "alice-ext"))!;
+        expect(c.step.step_key).toBe(`${kind}_${page}`);
+        await engine.saveCheckpoint(actor("t_alice"), taskId, c.leaseToken, { page, kind });
+        await engine.reportStep(actor("t_alice"), taskId, c.step.id, { leaseToken: c.leaseToken, outcome: "completed", result: { page } });
+      }
+      await drain();
+    };
+    const { task } = await engine.createTask(actor("t_alice"), { taskType: "paged", input: { url: "https://careers.example.com/apply/1" } });
+    await run(task.id, 1);
+    let view = await engine.getTask(actor("t_alice"), task.id);
+    expect(view.task.status).toBe("waiting_for_approval");
+    expect(view.task.checkpoint_json).toEqual({ page: 1, kind: "fill" });
+    const first = view.approvals[0]!;
+    // Another website is refused; a non-waiting task cannot add pages.
+    await expect(engine.addPage(actor("t_alice"), task.id, "https://evil.example.net/apply/2")).rejects.toMatchObject({ code: "invalid_input" });
+    await expect(engine.addPage(actor("t_bob"), task.id, "https://careers.example.com/apply/2")).rejects.toMatchObject({ code: "not_found" });
+    await engine.addPage(actor("t_alice"), task.id, "https://careers.example.com/apply/2");
+    view = await engine.getTask(actor("t_alice"), task.id);
+    expect(view.approvals.find((a) => a.id === first.id)!.status).toBe("expired");
+    expect(view.steps.map((s) => s.step_key)).toEqual(["read_1", "fill_1", "read_2", "fill_2", "review"]);
+    await expect(engine.addPage(actor("t_alice"), task.id, "https://careers.example.com/apply/3")).rejects.toMatchObject({ code: "invalid_input" });
+    await run(task.id, 2);
+    view = await engine.getTask(actor("t_alice"), task.id);
+    expect(view.task.status).toBe("waiting_for_approval");
+    const second = view.approvals.find((a) => a.status === "pending")!;
+    expect(second.requested_payload_json).toEqual({ origin: "https://careers.example.com", pages: 2 });
+    // The expired first approval can no longer be used.
+    await expect(engine.decideApproval(actor("t_alice"), first.id, "approve")).rejects.toMatchObject({ code: "approval_decided" });
+    await engine.decideApproval(actor("t_alice"), second.id, "approve");
+    await drain();
+    expect(await statusOf(task.id)).toBe("completed");
+  });
+
+  it("site permissions: owner-only, valid origins and scopes only (0017)", async () => {
+    const asUserTx = <T>(key: string, fn: Parameters<typeof withUser<T>>[2]) => withUser(db, { userId: ids[key]!, role: "CUSTOMER" }, fn);
+    await asUserTx("t_alice", (tx) => tx`insert into site_permissions (user_id, origin, scopes) values (${ids.t_alice!}, 'https://careers.example.com', ${["inspect", "fill"]})`);
+    expect(await asUserTx("t_bob", (tx) => tx`select id from site_permissions`)).toHaveLength(0);
+    await expect(asUserTx("t_bob", (tx) => tx`insert into site_permissions (user_id, origin, scopes) values (${ids.t_alice!}, 'https://x.example.com', ${["fill"]})`)).rejects.toThrow(/row-level security/);
+    expect(await asUserTx("t_bob", (tx) => tx`update site_permissions set scopes = ${["fill", "attach_file"]} returning id`)).toHaveLength(0);
+    for (const origin of ["http://example.com", "javascript:alert(1)", "https://careers.example.com/path", "file:///c:/x"]) {
+      await expect(asUserTx("t_alice", (tx) => tx`insert into site_permissions (user_id, origin, scopes) values (${ids.t_alice!}, ${origin}, ${["fill"]})`), origin).rejects.toThrow(/check constraint/);
+    }
+    // Submitting, paying and sending are not grantable scopes.
+    for (const scope of ["submit", "pay", "send_message", "click_next"]) {
+      await expect(asUserTx("t_alice", (tx) => tx`insert into site_permissions (user_id, origin, scopes) values (${ids.t_alice!}, 'https://jobs.example.com', ${[scope]})`), scope).rejects.toThrow(/check constraint/);
+    }
+    await expect(asUserTx("t_alice", (tx) => tx`insert into site_permissions (user_id, origin, scopes) values (${ids.t_alice!}, 'https://careers.example.com', ${["fill"]})`)).rejects.toThrow(/duplicate key/);
   });
 
   it("paginates the task list and filters by status", async () => {

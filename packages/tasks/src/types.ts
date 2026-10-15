@@ -13,6 +13,8 @@ export interface StepSpec {
   /** Running it twice is harmless (no external effect). Defaults to true for server steps, false for browser steps. */
   idempotent?: boolean;
   input?: JsonObject;
+  /** Explicit order (default: position in the list). Lets later pages slot in before a final step. */
+  sequence?: number;
 }
 
 /** How a task type turns the user's input into ordered steps. */
@@ -21,6 +23,11 @@ export interface TaskTemplate<I extends JsonObject = JsonObject> {
   parse(input: unknown): I;
   defaultTitle(input: I): string;
   steps(input: I): StepSpec[];
+  /**
+   * Multi-page tasks: the steps for page `pageNumber` at `url`, added after the user moved to
+   * the next page themselves. Throws TaskError("invalid_input") for a page on another site.
+   */
+  nextPage?(input: I, pageNumber: number, url: string): StepSpec[];
 }
 
 export interface StepContext {

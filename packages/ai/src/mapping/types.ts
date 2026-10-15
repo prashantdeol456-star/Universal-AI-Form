@@ -35,6 +35,8 @@ export type DecisionReason =
   | "captcha"
   | "otp"
   | "password"
+  | "payment"
+  | "suspicious"
   | "upload"
   | "declaration";
 

@@ -4,3 +4,6 @@ export { watchForm, type FormWatcher } from "./watch";
 export { insertEmailDraft, type EmailInsertResult, type EmailInsertRun } from "./email";
 export { attachFile, listUploadFields, type AttachOutcome, type UploadField } from "./upload";
 export { hideCursor, pointAt } from "./visual";
+export { liveSignature } from "./detect";
+export { inspectPage, INSPECT_LIMITS, type PageInspection } from "./inspect";
+export { verifyFill, type VerifyResult, type VerifyStatus } from "./verify";

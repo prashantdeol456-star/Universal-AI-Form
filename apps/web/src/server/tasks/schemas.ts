@@ -51,7 +51,7 @@ export const decisionSchema = z.object({
   note: z.string().trim().max(300).nullish(),
 });
 
-export const claimSchema = z.object({ workerId: z.string().regex(/^[A-Za-z0-9:_-]{4,100}$/) });
+export const claimSchema = z.object({ workerId: z.string().regex(/^[A-Za-z0-9:_-]{4,100}$/), taskId: z.uuid().nullish() });
 
 export const reportSchema = z.object({
   leaseToken: z.uuid(),

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { composeEmail, type ComposeLanguage, type ComposeResult, type ComposeTone } from "./api";
-import { getActiveTab, insertEmailIntoTab, isSupportedUrl, requestSitePermission, undoEmailInTab } from "./page";
+import { getActiveTab, insertEmailIntoTab, isSupportedUrl, undoEmailInTab } from "./page";
+import { authorizeSite, decide } from "./siteAccess";
 
 /**
  * "Write email": a chat where the user says what email they need; the server
@@ -64,6 +65,12 @@ export function Compose({ server }: { server: string }) {
     const tab = await getActiveTab();
     if (!tab || !isSupportedUrl(tab.url)) {
       update(msg.id, { inserted: { tabId: -1, ok: false, text: "Open Gmail or Outlook in this tab, click Compose, then press Insert again." } });
+      return;
+    }
+    // Least privilege: text is only inserted on sites the user allowed for it.
+    const d = await decide("insert_text", tab.url).catch((e: unknown) => ({ allowed: false as const, fix: "invalid_url" as const, reason: e instanceof Error ? e.message : String(e) }));
+    if (!d.allowed) {
+      update(msg.id, { inserted: { tabId: tab.id, ok: false, text: d.reason, canAllow: d.fix === "authorize_site" ? tab.url ?? undefined : undefined } });
       return;
     }
     const r = await insertEmailIntoTab(tab.id, { subject: msg.subject, body: msg.body });
@@ -163,10 +170,12 @@ export function Compose({ server }: { server: string }) {
                 <button
                   className="link small"
                   onClick={async () => {
-                    if (await requestSitePermission(m.inserted!.canAllow!)) void insert(m);
+                    const a = await authorizeSite(m.inserted!.canAllow!, ["insert_text"]);
+                    if (a.ok) void insert(m);
+                    else update(m.id, { inserted: { ...m.inserted!, text: a.error } });
                   }}
                 >
-                  Allow on this site and try again
+                  Allow inserting text on this site and try again
                 </button>
               )}
             </div>

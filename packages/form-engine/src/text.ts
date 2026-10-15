@@ -1,3 +1,4 @@
+import { looksLikeInjection } from "./injection";
 /** Text helpers shared by the DOM detector and the backend. No DOM access here. */
 
 /** FNV-1a 32-bit, hex. Small, fast, deterministic — for signatures, not security. */
@@ -56,10 +57,16 @@ export function detectLabelLanguage(label: string): "en" | "hi" | "mixed" {
 const CAPTCHA = /captcha|security\s*code|verification\s*code\s*(?:shown|in\s+the\s+image)|enter\s+(?:the\s+)?(?:characters|text|code)\s+(?:shown|in|from)|image\s*code|कैप्चा|सुरक्षा\s*कोड/i;
 const OTP = /\botp\b|one[\s-]*time[\s-]*pass(?:word|code)|verification\s*code|ओटीपी/i;
 
-export function manualReasonFor(label: string, extra: string): "captcha" | "otp" | null {
+const PAYMENT =
+  /\b(card\s*number|credit\s*card|debit\s*card|name\s+on\s+card|cvv2?|cvc|card\s*(security|verification)\s*code|expiry\s*date\s*of\s*card|card\s*expiry|valid\s*thru|upi\s*pin|m-?pin|atm\s*pin|net\s*banking\s*(password|pin))\b|\bcc-(number|csc|exp|exp-month|exp-year|name)\b|कार्ड\s*नंबर/i;
+
+export function manualReasonFor(label: string, extra: string): "captcha" | "otp" | "payment" | "suspicious" | null {
   const text = `${label} ${extra}`;
   if (CAPTCHA.test(text)) return "captcha";
   if (OTP.test(text)) return "otp";
+  if (PAYMENT.test(text)) return "payment";
+  // A label that gives orders to AI assistants is never filled automatically.
+  if (looksLikeInjection(label)) return "suspicious";
   return null;
 }
 

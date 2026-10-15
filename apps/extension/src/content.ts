@@ -1,5 +1,5 @@
-import { attachFile, detectForm, fillForm, findFieldElement, insertEmailDraft, listUploadFields, watchForm, type EmailInsertRun, type FillRun } from "@ufa/form-engine/dom";
-import type { AttachFileResponse, ContentToPanel, DetectResponse, FillResponse, InsertEmailResponse, ListUploadsResponse, PanelToContent, UndoResponse } from "./messages";
+import { attachFile, detectForm, fillForm, inspectPage, verifyFill, findFieldElement, insertEmailDraft, listUploadFields, watchForm, type EmailInsertRun, type FillRun } from "@ufa/form-engine/dom";
+import type { AttachFileResponse, ContentToPanel, DetectResponse, VerifyResponse, FillResponse, InsertEmailResponse, ListUploadsResponse, PanelToContent, UndoResponse } from "./messages";
 
 /**
  * Injected on demand (when the user clicks "Analyze") — never declared for all
@@ -22,7 +22,9 @@ if (!window.__ufaContentLoaded) {
 
   const startWatching = () => {
     watcher ??= watchForm(document, (reason) => {
-      const snapshot = detectForm(document);
+      const full = detectForm(document);
+      // Hidden fields are not offered (Phase 2): only what the user can see.
+      const snapshot = { ...full, fields: full.fields.filter((f) => f.visible) };
       // Only notify when the set of visible fields actually changed.
       if (snapshot.formSignature === lastSignature && reason === "dom") return;
       lastSignature = snapshot.formSignature;
@@ -42,10 +44,10 @@ if (!window.__ufaContentLoaded) {
     }
     if (msg.type === "UFA_DETECT") {
       try {
-        const snapshot = detectForm(document);
+        const { snapshot, ...inspection } = inspectPage(document);
         lastSignature = snapshot.formSignature;
         startWatching();
-        sendResponse({ ok: true, snapshot } satisfies DetectResponse);
+        sendResponse({ ok: true, snapshot, inspection } satisfies DetectResponse);
       } catch (err) {
         sendResponse({ ok: false, error: err instanceof Error ? err.message : String(err) } satisfies DetectResponse);
       }
@@ -59,6 +61,14 @@ if (!window.__ufaContentLoaded) {
         })
         .catch((err) => sendResponse({ ok: false, error: err instanceof Error ? err.message : String(err) } satisfies FillResponse));
       return true; // async response
+    }
+    if (msg.type === "UFA_VERIFY") {
+      try {
+        sendResponse({ ok: true, results: verifyFill(document, msg.items) } satisfies VerifyResponse);
+      } catch (err) {
+        sendResponse({ ok: false, error: err instanceof Error ? err.message : String(err) } satisfies VerifyResponse);
+      }
+      return;
     }
     if (msg.type === "UFA_UNDO") {
       const restored = lastFill ? lastFill.undo() : 0;

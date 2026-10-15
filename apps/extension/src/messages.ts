@@ -1,5 +1,5 @@
 import type { FillResult, FormSnapshot } from "@ufa/form-engine";
-import type { AttachOutcome, EmailInsertResult, FillItem, UploadField } from "@ufa/form-engine/dom";
+import type { AttachOutcome, EmailInsertResult, FillItem, PageInspection, UploadField, VerifyResult } from "@ufa/form-engine/dom";
 
 /** Messages between the side panel and the content script. */
 export type PanelToContent =
@@ -9,6 +9,8 @@ export type PanelToContent =
   /** Fill fields the user confirmed (values come from the server after confirmation). */
   | { type: "UFA_FILL"; items: FillItem[]; visual?: boolean }
   | { type: "UFA_UNDO" }
+  /** Re-read filled fields from the page and compare with what was intended (after a fill). */
+  | { type: "UFA_VERIFY"; items: FillItem[] }
   /** Put an email draft the user approved into the open compose window (never sends). */
   | { type: "UFA_INSERT_EMAIL"; subject: string; body: string }
   | { type: "UFA_UNDO_EMAIL" }
@@ -18,7 +20,10 @@ export type PanelToContent =
 
 export type ContentToPanel = { type: "UFA_FORM_CHANGED"; reason: "dom" | "navigation"; snapshot: FormSnapshot };
 
-export type DetectResponse = { ok: true; snapshot: FormSnapshot } | { ok: false; error: string };
+/** What the page inspector found, without the snapshot (sent separately). */
+export type InspectionSummary = Omit<PageInspection, "snapshot">;
+export type DetectResponse = { ok: true; snapshot: FormSnapshot; inspection: InspectionSummary } | { ok: false; error: string };
+export type VerifyResponse = { ok: true; results: VerifyResult[] } | { ok: false; error: string };
 export type FillResponse = { ok: true; results: FillResult[] } | { ok: false; error: string };
 export type UndoResponse = { ok: true; restored: number } | { ok: false; error: string };
 export type ListUploadsResponse = { ok: true; fields: UploadField[] } | { ok: false; error: string };

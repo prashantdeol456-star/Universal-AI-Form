@@ -1,14 +1,19 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormSnapshot } from "@ufa/form-engine";
 import type { ContentToPanel } from "../messages";
-import { ApiError, confirmApplication, getCafe, mapForm, sendFillEvent, sendMappingFeedback, updateApplication, type CafeSessionOption, type MapResult, type Me } from "./api";
-import { plannedItems, PreviewView, ResultView, toConfirmItem, type FillOutcome, type Selection } from "./Fill";
-import { analyzeTab, fillTab, getActiveTab, hasSitePermission, highlightField, isSupportedUrl, listUploadsInTab, requestAllSitesPermission, requestSitePermission, undoFillTab, type ActiveTab } from "./page";
+import { addTaskPage, ApiError, decideApproval, getTaskDetail, getCafe, mapForm, sendFillEvent, sendMappingFeedback, updateApplication, type CafeSessionOption, type MapResult, type Me } from "./api";
+import { plannedItems, PreviewView, ResultView, type FillOutcome, type Selection } from "./Fill";
+import { analyzeTab, getActiveTab, highlightField, isSupportedUrl, listUploadsInTab, undoFillTab, type ActiveTab } from "./page";
 import type { UploadField } from "@ufa/form-engine/dom";
 import { UploadsCard } from "./Uploads";
 import { AssistantChat } from "./AssistantChat";
 import { useAssistantAgent } from "./useAssistantAgent";
 import { CafeBar } from "./CafeBar";
+import { fillViaTask } from "./fillTask";
+import { InspectionCard } from "./InspectionCard";
+import { SiteAccessCard } from "./SiteAccessCard";
+import { decide } from "./siteAccess";
+import type { InspectionSummary } from "../messages";
 import { FormSummary, type FeedbackFn } from "./FormSummary";
 
 function safeHost(url: string) {
@@ -26,9 +31,13 @@ export function Main({ user, server, onSignedOut }: { user: Me; server: string; 
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [allowed, setAllowed] = useState(false);
-  // Chrome shared nothing about this tab (panel opened on another tab): offer access instead of a dead end.
+  // Chrome shared nothing about this tab (panel opened on another tab).
   const [needsAccess, setNeedsAccess] = useState(false);
+  const [inspection, setInspection] = useState<InspectionSummary | null>(null);
+  // Multi-page forms: the fill task this page continues (the user moved here themselves).
+  const [continueTaskId, setContinueTaskId] = useState<string | null>(null);
+  // One idempotency key per reviewed preview: a double click never creates two fill tasks.
+  const fillKey = useRef<string>(crypto.randomUUID());
   const [uploads, setUploads] = useState<UploadField[]>([]);
   const [selection, setSelection] = useState<Selection>({});
   const [phase, setPhase] = useState<"form" | "preview" | "result">("form");
@@ -73,8 +82,8 @@ export function Main({ user, server, onSignedOut }: { user: Me; server: string; 
   const loadTab = useCallback(async () => {
     const t = await getActiveTab();
     setTab(t);
-    setAllowed(t?.url ? await hasSitePermission(t.url) : false);
     setSnapshot(null);
+    setInspection(null);
     setMapping(null);
     setError(null);
     setStatus(null);
@@ -132,24 +141,23 @@ export function Main({ user, server, onSignedOut }: { user: Me; server: string; 
     setError(null);
     setStatus(null);
     try {
+      // Policy first: only a site the user allowed is read at all.
+      const d = await decide("inspect", tab.url);
+      if (!d.allowed) {
+        if (!tab.url) setNeedsAccess(true);
+        throw new Error(d.reason);
+      }
       let res;
       try {
         res = await analyzeTab(tab.id);
       } catch {
-        // No access yet: ask for this one site (the click is the user gesture Chrome requires).
-        if (tab.url && isSupportedUrl(tab.url) && (await requestSitePermission(tab.url))) {
-          setAllowed(true);
-          res = await analyzeTab(tab.id);
-        } else if (!tab.url) {
-          setNeedsAccess(true);
-          return;
-        } else {
-          throw new Error("To read this page, click the extension icon while on the page, or allow this site.");
-        }
+        throw new Error(`Chrome has not given the assistant access to ${safeHost(tab.url!)} on this computer. Use “Remove access” and allow the site again, or click the extension icon on the page.`);
       }
       if (!res.ok) throw new Error(res.error);
       setNeedsAccess(false);
       setSnapshot(res.snapshot);
+      setInspection(res.inspection);
+      fillKey.current = crypto.randomUUID();
       const up = await listUploadsInTab(tab.id);
       setUploads(up.ok ? up.fields : []);
       await runMapping(res.snapshot);
@@ -158,10 +166,6 @@ export function Main({ user, server, onSignedOut }: { user: Me; server: string; 
     } finally {
       setBusy(false);
     }
-  }
-
-  async function allowSite() {
-    if (tab?.url && (await requestSitePermission(tab.url))) setAllowed(true);
   }
 
   const agent = useAssistantAgent({
@@ -178,14 +182,6 @@ export function Main({ user, server, onSignedOut }: { user: Me; server: string; 
     setError,
     setStatus,
   });
-
-  async function allowAllSites() {
-    if (!(await requestAllSitesPermission())) return;
-    setNeedsAccess(false);
-    setAllowed(true);
-    await loadTab();
-    await analyze();
-  }
 
   const feedback: FeedbackFn = async (field, suggestedKey, correctKey) => {
     if (!snapshot) return;
@@ -208,28 +204,67 @@ export function Main({ user, server, onSignedOut }: { user: Me; server: string; 
     setError(null);
     setStatus(null);
     try {
+      const d = await decide("fill", tab.url);
+      if (!d.allowed) throw new Error(d.reason);
       const items = plannedItems(snapshot, mapping, selection);
-      const res = await confirmApplication({
-        url: snapshot.url,
-        domain: snapshot.domain,
-        formTitle: snapshot.formTitle,
-        pageTitle: snapshot.pageTitle,
-        formSignatureId: mapping.formSignatureId,
-        items: items.map(toConfirmItem),
-        cafeSessionId,
+      const r = await fillViaTask({ tabId: tab.id, snapshot, mapping, items, taskId: continueTaskId, cafeSessionId, idempotencyKey: `fill-${fillKey.current}` });
+      setContinueTaskId(null);
+      setOutcome({
+        applicationId: r.applicationId,
+        results: r.results,
+        undone: false,
+        status: "CONFIRMED",
+        customerName: mapping.cafe?.customerName ?? null,
+        taskId: r.taskId,
+        verification: r.verification,
+        pageChanged: r.pageChanged,
       });
-      const byField = new Map(items.map((i) => [i.field.id, i]));
-      const fillItems = res.instructions
-        .filter((ins) => byField.has(ins.fieldId))
-        .map((ins) => ({ field: byField.get(ins.fieldId)!.field, instruction: { ...ins, overwrite: byField.get(ins.fieldId)!.choice.overwrite } }));
-      const filled = await fillTab(tab.id, fillItems);
-      if (!filled.ok) throw new Error(filled.error);
-      await sendFillEvent(res.applicationId, { type: "FILLED", results: filled.results }).catch(() => {});
-      setOutcome({ applicationId: res.applicationId, results: filled.results, undone: false, status: "CONFIRMED", customerName: mapping.cafe?.customerName ?? null });
       setPhase("result");
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) onSignedOut();
       else if (!handleCafeEnded(err)) setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setFilling(false);
+    }
+  }
+
+  /** The user clicked the website's Next button themselves; the task continues on this (same-site) page. */
+  async function continueOnNextPage(taskId: string) {
+    if (!tab) return;
+    setFilling(true);
+    setError(null);
+    try {
+      const t = await getActiveTab();
+      if (!t?.url) throw new Error("Chrome has not shared this tab. Click the extension icon on the page.");
+      await addTaskPage(taskId, t.url);
+      setContinueTaskId(taskId);
+      setOutcome(null);
+      setSelection({});
+      setPhase("form");
+      setSnapshot(null);
+      setInspection(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setFilling(false);
+    }
+  }
+
+  /** The user reviewed all pages and submits on the website themselves: close the task (nothing is submitted). */
+  async function finishFillTask(taskId: string) {
+    setFilling(true);
+    setError(null);
+    try {
+      let approval = null;
+      for (let i = 0; i < 20 && !approval; i++) {
+        approval = (await getTaskDetail(taskId)).approvals.find((a) => a.status === "pending") ?? null;
+        if (!approval) await new Promise((r) => setTimeout(r, 400));
+      }
+      if (!approval) throw new Error("The task is not ready to close yet. Check the Tasks tab.");
+      await decideApproval(approval.id, "approve");
+      setStatus("Task closed. Submit the form on the website yourself when you are ready.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
       setFilling(false);
     }
@@ -282,12 +317,9 @@ export function Main({ user, server, onSignedOut }: { user: Me; server: string; 
           </button>
         </div>
         {tab?.url && !supported && <p className="small muted">This kind of page cannot be read (browser or store pages).</p>}
-        {supported && !allowed && (
-          <button className="link small" onClick={allowSite}>
-            Always allow on {host} (re-reads the form automatically when it changes)
-          </button>
-        )}
+        <SiteAccessCard key={tab?.url ?? "none"} url={tab?.url ?? null} onChange={(site) => site && setError(null)} />
       </div>
+      {continueTaskId && <div className="info small">Continuing your fill task on this page: analyze it, check the preview, then fill.</div>}
 
       {isCafeAccount && cafe && (
         <CafeBar
@@ -317,21 +349,16 @@ export function Main({ user, server, onSignedOut }: { user: Me; server: string; 
         />
       )}
       {needsAccess && (
-        <div className="warn">
-          <b>Chrome has not given the assistant access to this tab yet.</b>
-          <p className="small" style={{ margin: "6px 0" }}>
-            Either click the extension icon in the toolbar while you are on this page, or allow it once for all websites. It still reads a page
-            only when you press Analyze, and never submits anything.
-          </p>
-          <button className="primary" onClick={() => void allowAllSites()}>
-            Allow on all websites
-          </button>
+        <div className="warn small">
+          <b>Chrome has not shared this tab with the assistant.</b> Click the extension icon in the Chrome toolbar while you are on the page. The
+          assistant asks for one site at a time, never for all websites.
         </div>
       )}
+      {inspection && snapshot && phase === "form" && <InspectionCard inspection={inspection} fieldCount={snapshot.fields.length} />}
       {error && <div className="alert">{error}</div>}
       {status && <div className="info">{status}</div>}
       {snapshot && tab && uploads.length > 0 && phase === "form" && !cafeSessionId && (
-        <UploadsCard tabId={tab.id} domain={snapshot.domain} fields={uploads} server={server} />
+        <UploadsCard tabId={tab.id} url={snapshot.url} domain={snapshot.domain} fields={uploads} server={server} />
       )}
       {snapshot && tab && phase === "preview" && (
         <PreviewView snapshot={snapshot} mapping={mapping} items={planned} busy={filling} onBack={() => setPhase("form")} onConfirm={confirmAndFill} />
@@ -350,6 +377,8 @@ export function Main({ user, server, onSignedOut }: { user: Me; server: string; 
             setOutcome(null);
             setSelection({});
           }}
+          onNextPage={outcome.taskId ? () => void continueOnNextPage(outcome.taskId!) : undefined}
+          onFinishTask={outcome.taskId ? () => void finishFillTask(outcome.taskId!) : undefined}
         />
       )}
       {snapshot && tab && phase === "form" && (

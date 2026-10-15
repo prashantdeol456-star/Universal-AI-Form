@@ -4,13 +4,17 @@
  * flow can be tried in any browser:  window.UFADetector.detect()
  * Not included in the extension package.
  */
-import { attachFile, detectForm, fillForm, insertEmailDraft, listUploadFields, watchForm, type EmailInsertRun, type FillItem, type FillRun } from "@ufa/form-engine/dom";
+import { attachFile, fillForm, inspectPage, verifyFill, insertEmailDraft, listUploadFields, watchForm, type EmailInsertRun, type FillItem, type FillRun } from "@ufa/form-engine/dom";
 
 let lastRun: FillRun | null = null;
 let lastEmail: EmailInsertRun | null = null;
 
 (window as unknown as { UFADetector: unknown }).UFADetector = {
-  detect: () => detectForm(document),
+  detect: () => {
+    const { snapshot, ...inspection } = inspectPage(document);
+    return { snapshot, inspection };
+  },
+  verify: (items: FillItem[]) => verifyFill(document, items),
   watch: watchForm,
   fill: async (items: FillItem[], visual?: boolean) => {
     lastRun = await fillForm(document, items, { visual: Boolean(visual) });

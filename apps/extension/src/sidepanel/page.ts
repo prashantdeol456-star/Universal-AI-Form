@@ -1,6 +1,5 @@
 import type { FillItem } from "@ufa/form-engine/dom";
-import type { AttachFileResponse, DetectResponse, FillResponse, InsertEmailResponse, ListUploadsResponse, PanelToContent, UndoResponse } from "../messages";
-import { originPattern } from "./storage";
+import type { AttachFileResponse, DetectResponse, VerifyResponse, FillResponse, InsertEmailResponse, ListUploadsResponse, PanelToContent, UndoResponse } from "../messages";
 
 export interface ActiveTab {
   id: number;
@@ -16,24 +15,6 @@ export async function getActiveTab(): Promise<ActiveTab | null> {
 
 export function isSupportedUrl(url: string | null): boolean {
   return Boolean(url && /^https?:\/\//.test(url) && !/^https:\/\/chrome\.google\.com\/webstore/.test(url));
-}
-
-export async function hasSitePermission(url: string): Promise<boolean> {
-  return chrome.permissions.contains({ origins: [originPattern(url)] });
-}
-
-/**
- * When Chrome has not shared even the tab's address (the panel was opened on another
- * tab), no single site can be asked for. The user may allow the assistant on all
- * websites once; it still reads a page only when they press Analyze.
- */
-export async function requestAllSitesPermission(): Promise<boolean> {
-  return chrome.permissions.request({ origins: ["https://*/*", "http://*/*"] });
-}
-
-/** "Always allow on this site": persistent permission for one site (must run in a click handler). */
-export async function requestSitePermission(url: string): Promise<boolean> {
-  return chrome.permissions.request({ origins: [originPattern(url)] });
 }
 
 /**
@@ -124,4 +105,14 @@ export async function openUrlInTab(tabId: number, url: string): Promise<void> {
     setTimeout(done, 30_000);
   });
   await new Promise((r) => setTimeout(r, 1500));
+}
+
+/** After a fill: re-read the filled fields from the page. */
+export async function verifyTab(tabId: number, items: FillItem[]): Promise<VerifyResponse> {
+  const msg: PanelToContent = { type: "UFA_VERIFY", items };
+  try {
+    return (await chrome.tabs.sendMessage(tabId, msg)) as VerifyResponse;
+  } catch {
+    return { ok: false, error: "The page was reloaded or closed." };
+  }
 }

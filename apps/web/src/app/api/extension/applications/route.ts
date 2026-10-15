@@ -5,6 +5,7 @@ import { requireUser } from "@/server/auth/session";
 import { resolveCafeContext } from "@/server/cafe/context";
 import { confirmApplication } from "@/server/applications/service";
 import { json, parseBody, rateLimit, route } from "@/server/http";
+import { assertSiteAllowed } from "@/server/sites/service";
 
 const field = normalizedFieldSchema.pick({ id: true, signature: true, label: true, name: true, kind: true, options: true, manual: true, section: true, language: true });
 
@@ -39,6 +40,8 @@ export const POST = route(async (req: NextRequest) => {
   const user = await requireUser("applications:manage_own");
   rateLimit("application-confirm", user.id, 30, 60_000);
   const body = await parseBody(req, bodySchema);
+  // Values to fill are only handed out for a site the user allowed to be filled.
+  await assertSiteAllowed(user, body.url, "fill");
   const cafe = body.cafeSessionId ? await resolveCafeContext(user, body.cafeSessionId) : undefined;
   return json(await confirmApplication(user, body, cafe), { status: 201, headers: { "Cache-Control": "no-store" } });
 });

@@ -28,7 +28,7 @@ export const normalizedFieldSchema = z.object({
   disabled: z.boolean(),
   readOnly: z.boolean(),
   hasValue: z.boolean(),
-  manual: z.enum(["captcha", "otp", "password", "unsupported_control"]).nullable(),
+  manual: z.enum(["captcha", "otp", "password", "payment", "suspicious", "unsupported_control"]).nullable(),
   accept: shortText(200).nullable(),
   signature: z.string().regex(/^[0-9a-f]{8}$/),
   frame: z.enum(["top", "child"]),

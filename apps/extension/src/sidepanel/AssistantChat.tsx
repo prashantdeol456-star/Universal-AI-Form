@@ -67,8 +67,8 @@ export function AssistantChat({
       </div>
       {messages.length === 0 && (
         <p className="muted small" style={{ margin: 0 }}>
-          Press <b>Fill everything</b> (or type “fill”) and I will read this page, attach your CV, fill what I know, ask you what I don’t, and
-          remember your answers for next time. Paste a link to open a page first. Tell me anything about yourself and I save it to your profile.
+          Press <b>Fill everything</b> (or type “fill”) and I will read this page (on sites you allowed), offer your CV for upload boxes, show what I will fill, ask you what I don’t know, and
+          remember your answers for next time. Paste a link and I open it after you check it. Tell me anything about yourself and I save it to your profile.
           You do CAPTCHA, “I agree” and Submit yourself.
         </p>
       )}

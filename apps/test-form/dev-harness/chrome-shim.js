@@ -25,13 +25,14 @@
   var noopEvent = { addListener: function () {}, removeListener: function () {} };
   window.chrome = {
     storage: { local: area("local"), session: area("session") },
-    permissions: { contains: function () { return Promise.resolve(true); }, request: function () { return Promise.resolve(true); } },
+    permissions: { contains: function () { return Promise.resolve(true); }, request: function () { return Promise.resolve(true); }, remove: function () { return Promise.resolve(true); } },
     tabs: {
       query: function () { return Promise.resolve([{ id: 1, url: formWindow().location.href, title: formWindow().document.title }]); },
       create: function (o) { window.open(o.url, "_blank"); return Promise.resolve(); },
       sendMessage: function (_id, msg) {
         var w = formWindow();
-        if (msg.type === "UFA_DETECT") return Promise.resolve({ ok: true, snapshot: w.UFADetector.detect() });
+        if (msg.type === "UFA_DETECT") return Promise.resolve(Object.assign({ ok: true }, w.UFADetector.detect()));
+        if (msg.type === "UFA_VERIFY") return Promise.resolve({ ok: true, results: w.UFADetector.verify(msg.items) });
         if (msg.type === "UFA_HIGHLIGHT") {
           var el = w.document.querySelector('[data-ufa-id="' + msg.fieldId + '"]');
           if (el) { el.scrollIntoView({ block: "center" }); el.style.outline = "3px solid #2453e0"; setTimeout(function () { el.style.outline = ""; }, 1600); }

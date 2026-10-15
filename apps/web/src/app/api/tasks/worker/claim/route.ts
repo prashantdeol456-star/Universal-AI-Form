@@ -12,7 +12,7 @@ import { claimSchema } from "@/server/tasks/schemas";
 export const POST = route(async (req: NextRequest) => {
   const user = await requireUser();
   rateLimit("task-claim", user.id, 120, 60_000);
-  const { workerId } = await parseBody(req, claimSchema);
-  const claim = await tasks().claimBrowserStep(user, `${user.sessionId.slice(0, 8)}:${workerId}`);
+  const { workerId, taskId } = await parseBody(req, claimSchema);
+  const claim = await tasks().claimBrowserStep(user, `${user.sessionId.slice(0, 8)}:${workerId}`, taskId ?? null);
   return json({ claim }, { headers: { "Cache-Control": "no-store" } });
 });

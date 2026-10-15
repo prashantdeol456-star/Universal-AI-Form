@@ -34,6 +34,8 @@ const REASON: Record<string, string> = {
   captcha: "CAPTCHA, type it yourself",
   otp: "OTP, enter it yourself",
   password: "Password, never filled",
+  payment: "Payment detail (card, CVV, UPI PIN), enter it yourself",
+  suspicious: "This label tries to instruct AI assistants, fill it yourself",
   upload: "Upload — use “Upload fields on this page” above",
   declaration: "Declaration, tick it yourself after reading",
 };
@@ -103,7 +105,7 @@ export function FormSummary({
 
       {manual.length > 0 && (
         <div className="warn">
-          <b>Manual action required</b> for {[...new Set(manual.map((m) => (m.manual === "captcha" ? "CAPTCHA" : m.manual === "otp" ? "OTP" : m.manual === "password" ? "password" : "a custom control")))].join(", ")}. These are never filled automatically.
+          <b>Manual action required</b> for {[...new Set(manual.map((m) => (m.manual === "captcha" ? "CAPTCHA" : m.manual === "otp" ? "OTP" : m.manual === "password" ? "password" : m.manual === "payment" ? "payment details" : m.manual === "suspicious" ? "fields with suspicious instructions" : "a custom control")))].join(", ")}. These are never filled automatically.
         </div>
       )}
       {missing.length > 0 && mapping?.cafe && (
