@@ -10,7 +10,8 @@ test && npm run test:db && npm run build:extension && npm run build` green befor
 |---|---|
 | 0 — Groundwork | **Done**, except the first VPS deploy (needs the owner's server access and secrets) |
 | 1 — Persistent tasks | **Done** (15 October 2026) — see "Phase 1 — implemented" below; browser-step execution is deliberately left for Phase 2 |
-| 2–6 | Not started |
+| 2 — Safer browser actions | **Done** (15 October 2026) — see "Phase 2 — implemented" below. D-15 (focus-only comboboxes) still open |
+| 3–6 | Not started |
 | 7 — WhatsApp | Design only (`AI_BROWSER_WHATSAPP_DESIGN.md`) |
 
 ## Phase 0 — Groundwork (no new features)
@@ -131,6 +132,37 @@ cancel / retry; polls only while open).
 | Multi-page | `click_next` action gated by per-task approval; re-read after navigation |
 | Acceptance | A 3-page test form completes with approvals; a URL to an unknown domain asks first; tampered page text cannot trigger an action outside the list |
 | Rollback | Policies default to `ask`; disabling the flag restores single-page behaviour |
+
+### Phase 2 — implemented
+
+What changed from the plan above: there is **no `click_next` action**. Next / Continue / Submit stay with the user on
+every site (D-25); a multi-page form continues when the user says "I moved to the next page". Validation-error reading
+is deferred (Phase 3).
+
+| Part | Where | What it does |
+|---|---|---|
+| URL policy | `packages/form-engine/src/policy.ts` `checkUrl`, `sameOrigin` | https only (http only for `localhost`, `127.0.0.1`, `[::1]`, `*.localhost`, `*.test`); rejects `javascript:`, `data:`, `file:`, `blob:`, `chrome:`, `about:`, user:password@ and control characters. Subdomains and ports are different sites |
+| Action policy | `policy.ts` `decideAction` | Fixed action list. Grantable scopes per site: `inspect`, `fill`, `attach_file`, `insert_text`. **Never grantable**: `submit`, `click_next`, `pay`, `send_message`, `create_account`, `solve_captcha`, `enter_otp`, `enter_password`. `open_url` needs the user's review of the exact address |
+| Site permissions | migration `0017_site_permissions.sql`, `apps/web/src/server/sites/service.ts`, `/api/sites`, `/api/sites/:id` | Per user + origin, scopes checked by a DB constraint, forced RLS, audit `site.authorized` / `site.revoked`. **Enforced on the server**: form analyze/map (`inspect`), application confirm (`fill`), document attach (`attach_file`), adding a task page (`fill`) → 403 `site_not_allowed` |
+| Chrome permission | `apps/extension/src/sidepanel/siteAccess.ts` | One origin at a time, requested from the click (`chrome.permissions.request`) before the server grant; "Remove access" revokes both. The old "Allow on all websites" button is gone |
+| Page inspection | `packages/form-engine/src/dom/inspect.ts` | Structured, size-limited view: headings, instructions, forms (action origin, cross-site flag, buttons with role), **visible** fields only (hidden ones counted), injection signals (visible text, hidden text, labels), `javascript:` links |
+| Injection defence | `packages/form-engine/src/injection.ts`, `text.ts` `manualReasonFor` | Page text can never choose an action (fixed list + policy). Detection only warns: a field whose label gives orders to an assistant becomes manual (`suspicious`); payment fields (card, CVV, UPI PIN, `cc-*`) become manual (`payment`) |
+| Preview | `apps/extension/src/sidepanel/Fill.tsx` | Every value shows its source (profile key, verified or not, label / earlier match / AI) and confidence; "Use a different value for this form" replaces a profile value for this form only |
+| Controlled fill | `packages/form-engine/src/dom/fill.ts` | Before typing, the element's live signature must equal the reviewed one (`stale_element`); existing values are kept unless the user ticked overwrite; password / OTP / CAPTCHA / payment / file / hidden fields are never typed into |
+| Verification | `packages/form-engine/src/dom/verify.ts` | Re-reads each filled field: `verified`, `mismatch`, `missing`, `stale`; shown in the result view and stored in the task step result |
+| Task integration | `apps/extension/src/sidepanel/fillTask.ts`, `apps/web/src/server/tasks/engine.ts`, `packages/tasks` `addPage` | `fill_form` = `read_1` (checkpoint url + form signature) → `fill_1` (re-checks the page, fills, verifies; `uncertain` pauses the task when fields vanish) → review approval. "I moved to the next page" adds `read_n`/`fill_n` (same origin only, max 50 pages) and re-asks the approval with payload `{origin, pages}`. "All pages done" approves it; **nothing is submitted** |
+| Documents | `Uploads.tsx`, agent | Only on sites with `attach_file`. The panel attaches the file the user picked; the assistant asks "Attach your CV … to …?" per field (Attach / Skip) |
+| Assistant | `useAssistantAgent.ts` | Reads only allowed sites; a pasted link is shown for review (Open / Cancel) and nothing is filled after opening; before filling it lists every value and waits for "Fill these"; fills through the task and reports verification |
+| Email insert | `Compose.tsx` | Needs `insert_text` on the mail site ("Allow inserting text on this site") |
+
+**Known limitations / deferred**
+
+- Tested on the local test pages only (apply, jobs, mail, the new hostile `injection.html`); no claim about real sites.
+- Validation-error reading after fill and D-15 (focus-only comboboxes) are not done.
+- Injection detection is pattern based and English only; it is a warning, not the defence.
+- `optional_host_permissions` still lists `http://*/*` so a self-hosted server on plain http (e.g. a VPS IP before
+  HTTPS) can be reached; page access itself is limited to https and local http by `checkUrl`.
+- Site permissions are managed in the side panel only (no dashboard page yet).
 
 ## Phase 3 — Knowledge base
 

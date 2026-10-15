@@ -85,9 +85,10 @@ Without Gemini a ready template is used. Dev check: http://localhost:4000/__dev/
 |---|---|
 | `sidePanel`, `storage` | The UI and your settings/session |
 | `activeTab`, `scripting` | Read the page **you** are on, only when you click the icon / Analyze |
-| optional site access (asked per site) | "Always allow on this site" — re-read automatically on that site; also asked once for your server |
+| optional site access (asked per site) | "Site access" card → "Allow on <site>": Chrome access to that one origin, plus a server-side grant with the scopes you tick (read the form, fill fields, attach documents, insert email text). "Remove access" revokes both. Also asked once for your server |
 
-- No content script runs on every site; nothing is read until you ask.
+- No content script runs on every site; nothing is read until you ask, and only on sites you allowed (checked again by the server).
+- Never done on any site: Submit, Next / Continue, payments, sending messages, CAPTCHA, OTP, passwords, account creation.
 - Sent to your server: field labels, types, options, section names, page path — **never what you typed on the page**, never the page HTML, never query strings. Answers you type *in the side panel* are sent only when you confirm, and stored encrypted in that application's snapshot.
 - The extension stores only an opaque session token (memory-only unless "Keep me signed in"). It never holds Gemini/database keys.
 - It never submits forms and never interacts with CAPTCHA/OTP/2FA.

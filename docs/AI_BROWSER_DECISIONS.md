@@ -32,6 +32,21 @@ Each entry: question, options, recommendation, and whether the owner's approval 
 | D-21 | Engine errors recognised by `name`/`code` (`taskErrorInfo`) instead of `instanceof` | Next.js dev loaded the package twice and `instanceof` failed (found in the live check) |
 | D-22 | Reject on a waiting task → `failed` (retry asks again); reject while paused → `cancelled` | `paused → failed` is not a valid transition |
 
+### Phase 2 decisions (taken, no approval needed — they follow the PROMPT 4 rules)
+
+| ID | Decision | Why |
+|---|---|---|
+| D-23 | Per-site grants (`site_permissions`, origin + scopes) checked in the panel **and** on the server; Chrome host access requested per origin from the click | Least privilege; a modified extension still cannot get mappings, fill values or documents for a site the user did not allow |
+| D-24 | "Allow on all websites" removed | A blanket grant contradicts per-site authorization |
+| D-25 | No automated Next / Continue / Submit / payment / message / CAPTCHA / OTP / password / account creation, on any site, ever; these are not grantable scopes (DB check) | The user keeps every irreversible step; multi-page forms continue when the user says they moved on |
+| D-26 | Hidden fields are counted, never offered or filled | Hidden inputs are the usual place for injected or honeypot fields |
+| D-27 | The page cannot choose actions; injection detection only warns and turns instructed labels into manual fields | Detection can be evaded; the fixed action list cannot |
+| D-28 | Fill re-checks the element signature and the form signature/url before typing; verification re-reads every field after | A page that changed after review must not receive the reviewed values |
+| D-29 | The review approval is bound to `{origin, pages}`; adding a page expires the pending approval and asks again | An approval for a 1-page fill cannot close a 3-page one |
+| D-30 | Documents only via `attach_file` and a per-field choice (panel select, or Attach / Skip in chat); no automatic attach | PROMPT 4: never upload because a page asks |
+| D-31 | A pasted URL is shown for review (host + full address) and opened only on "Open"; nothing is filled automatically afterwards | PROMPT 4: no silent automation from a link |
+| D-32 | Payment fields (card, CVV, UPI/ATM PIN, `cc-*` autocomplete) are manual like OTP/CAPTCHA | Never enter financial credentials |
+
 ## Personal WhatsApp vs WhatsApp Business
 
 - **Personal WhatsApp** (the regular app): no official API gives a third-party app access to its chats. Supported,

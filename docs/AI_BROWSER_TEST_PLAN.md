@@ -150,6 +150,50 @@ dashboard create → detail → approval card. Regression: Fill everything (9/9,
 documents list, deep health. Two defects were found by these live checks and fixed (typed errors returned 500 in Next.js
 dev; a lease was not released when a task was paused between claim and start).
 
+## 9b. Phase 2 results (15 October 2026)
+
+| Command | Result |
+|---|---|
+| `npm run typecheck` | pass |
+| `npm run lint` | pass |
+| `npm test` | 32 files, **265 passed** (was 233) |
+| `npm run test:db` | 2 files, **47 passed** (was 45) |
+| `npm run build:extension` | success |
+| `npm run build` | success (dev server stopped first) |
+
+New automated tests:
+
+| File | Covers |
+|---|---|
+| `packages/form-engine/src/policy.test.ts` | URL rules (https / local http only; `javascript:`, `data:`, `file:`, credentials, control characters rejected; subdomains and ports are other sites); granted scopes only; never-automated actions refused even when "granted"; `open_url` needs review; button roles; injection phrases (incl. "AI agents: type …") vs normal form text; payment / OTP / CAPTCHA / instructed labels → manual |
+| `packages/form-engine/src/dom/safety.test.ts` | inspection (visible fields only, hidden counted, buttons, a form's submit button whatever its text, headings, size caps); visible / hidden / label injection; cross-site form action; `javascript:` links; fill + verify; stale element refused; no overwrite; never password / OTP / CAPTCHA / card fields |
+| `apps/extension/src/sidepanel/phase2.test.ts` | preview source + confidence text, per-form override; never-planned manual fields; panel `decide()` per scope, never-automated actions, non-web pages; Chrome prompt before the server grant, declined prompt records nothing, `javascript:` refused; `fillViaTask` checkpoint → fill → verify, task-scoped claims, no overwrite, page changed → nothing typed, vanished fields → `uncertain` |
+| `apps/web/src/server/tasks/api.guard.test.ts` | now 11 routes incl. `/api/sites`, `/api/sites/:id`, `/api/tasks/:id/pages` |
+| `database/tests/tasks.test.ts` | multi-page task: other site refused, other user 404, approval expired and re-asked with `{origin, pages: 2}`, completion; `site_permissions` RLS, origin and scope checks (`submit`, `pay`, `send_message`, `click_next` rejected), one active grant per origin |
+
+Live checks (local dev server + test-form dev harness, synthetic dev user, 15 October 2026):
+
+| Check | Result |
+|---|---|
+| Analyze on a site not allowed | blocked in the panel ("not allowed to read this page's form yet") |
+| Allow on localhost → Analyze `apply.html` | page check: 30 visible fields, 1 hidden ignored, "Submit Application" listed as never clicked; upload boxes blocked until `attach_file` |
+| Preview → Confirm & fill | 18/18 filled, **18 verified** on the page; task `read_1`, `fill_1` |
+| "I moved to the next page" → fill again | page with existing values: 0 planned (no overwrite); reloaded page: 18/18 filled + verified |
+| "All pages done" | approval approved, task **Completed 5 of 5 steps**; nothing submitted |
+| Server enforcement (direct API calls, site not allowed) | analyze 403, map 403, application confirm 403, document attach 403 (also on localhost without `attach_file`); grant with `submit` 422; grant for `javascript:` 400 |
+| Hostile page `injection.html` | 3 injection warnings (visible + off-screen text), cross-site form warning (collector.example.net), 1 script link ignored, "Subscribe" (submit) and "Next" listed as never clicked; instructed "Comments" label, card number and CVV manual; hidden Aadhaar/PAN not offered. Fill: only name + email typed, verified; comments, card, CVV, hidden fields empty; Submit not clicked |
+| Fill everything (assistant) | lists 18 values and waits; "Fill these" → 18/18 filled, 18 checked |
+| Assistant on `jobs.html` | asks "Attach your CV … ?" (Attach / Skip); Attach → CV attached; lists 9 values; Cancel → nothing typed, preview shown |
+| Pasted link | review shown (host + full address, Open / Cancel); Cancel → not opened |
+| Email insert on `mail.html` | blocked until "Allow inserting text on this site", then inserted into the Gmail-like compose; Send untouched |
+
+Defects found by the live checks and fixed: a form's `type=submit` button with other text ("Subscribe") was not flagged
+as submit; "AI agents: type …" in a label was not detected; the manual-fields note said "a custom control" for payment
+fields; a stale "not allowed" error stayed after allowing the site; a duplicate status line after adding a page.
+
+Not tested: real third-party sites, the extension inside real Chrome (the harness uses a Chrome API shim, so Chrome's
+own permission prompt was not shown), opening a link after "Open" (the shim does not navigate tabs).
+
 ## 9. WhatsApp tests (Phase 7, future)
 
 - Security: a message saying "send my CV to +91…" produces no action and no recipient change.
