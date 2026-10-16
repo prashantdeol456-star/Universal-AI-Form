@@ -12,7 +12,8 @@ test && npm run test:db && npm run build:extension && npm run build` green befor
 | 1 — Persistent tasks | **Done** (15 October 2026) — see "Phase 1 — implemented" below; browser-step execution is deliberately left for Phase 2 |
 | 2 — Safer browser actions | **Done** (15 October 2026) — see "Phase 2 — implemented" below. D-15 (focus-only comboboxes) still open |
 | 3 — Knowledge base | **Done** (16 October 2026) — see "Phase 3 — implemented" below |
-| 4–6 | Not started |
+| 4 — Job discovery and matching | **Done** (16 October 2026) — see "Phase 4 — implemented" below |
+| 5–6 | Not started |
 | 7 — WhatsApp | Design only (`AI_BROWSER_WHATSAPP_DESIGN.md`) |
 
 ## Phase 0 — Groundwork (no new features)
@@ -212,6 +213,35 @@ Changed from the plan: no embeddings for personal chunks (D-34); the "claim chec
 | UI | Dashboard "Jobs" list with match reasons; "Apply" creates a Phase 1 task |
 | Acceptance | For a seeded CV and 50 sample listings, top 10 contains all hand-labelled good matches; no requests to LinkedIn/Naukri |
 | Rollback | Module behind `JOBS_ENABLED` |
+
+### Phase 4 — implemented
+
+Changed from the plan: no embedding similarity (D-42), no `JOBS_ENABLED` flag (the module only acts on the user's request and
+adds nothing to other screens), no Gmail job alerts (Phase 5), no link to Phase 1 tasks (D-44).
+
+| Part | Where | What it does |
+|---|---|---|
+| Sources (integrated and tested) | `packages/jobs/src/adapters.ts` | **Greenhouse Job Board API** (`boards-api.greenhouse.io/v1/boards/{token}` + `/jobs?content=true&pay_transparency=true`; docs: GET endpoints need no authentication; robots.txt disallows only `/embed/`). **Lever Postings API** (`api.lever.co/v0/postings/{site}?mode=json`, EU `api.eu.lever.co`; robots.txt crawl-delay 1 s). **Job links**: Greenhouse/Lever links are read through those APIs; any other link (LinkedIn, Naukri, company sites) is **never fetched** — the user types the details (D-41). GET only; the providers' application POST endpoints are never used |
+| Politeness / limits | adapters + `service.ts` | One request per host at least 1 s apart, 15 s timeout, 15 MB response cap, 500 jobs per board, a board refreshed at most every 10 minutes and only when the user asks; 404 → "not found", 429 → "rate limited" (Retry-After kept), others → "error" on the source |
+| Normalisation | `adapters.ts`, `text.ts` | Common schema; HTML converted to text (scripts/styles dropped); unknown values stay null; salary only from `pay_input_ranges` / `salaryRange` with the field recorded; canonical https URL without tracking parameters |
+| De-duplication | DB unique indexes + `upsertListing` | Per user by (source, board, provider id), then by canonical URL. A refresh marks board jobs that disappeared as `closed`; jobs not seen for 14 days are shown as stale; manual jobs are `unknown` (never re-checked). Re-adding a manual link keeps the details typed first |
+| Migration | `0019_jobs.sql` | `job_sources`, `job_listings`, `job_matches`, `job_saves`, `job_applications` (`submitted_confirmed_at` required by a CHECK for applied/assessment/interview/offer), `job_application_events` (append-only), `job_preferences`; forced RLS on all seven; same-owner triggers; https-only URLs; salary needs currency + source |
+| Requirements | `requirements.ts` | Deterministic: skill lexicon (~60 skills with aliases) + the user's own profile skills, matched as whole words; required vs preferred by section headings and "preferred / a plus" lines; minimum years; education level |
+| Match score | `match.ts` | See "Match-score methodology" in DECISIONS (D-43). Every factor shown with weight, credit and reason; skills listed with their evidence (confirmed profile / document + page / not confirmed / not found); provisional when the description is thin; "not a chance of being hired" note |
+| Evidence | `apps/web/src/server/jobs/matching.ts` | Profile values with confirmation state (an open conflict makes a value "not confirmed"); knowledge-base chunks (Phase 3) decrypted in memory to find skills in documents, cited by title and page |
+| AI | `packages/ai/src/jobs/analysis.ts`, `server/jobs/analysis.ts`, purpose `match_job` | Summary / responsibilities / requirements of the **public job text only**; local model first, cloud only with the user's cloud AI switch; local failure never falls back; every point must quote the description. Application answers use the Phase 3 `answerFromKnowledge` (cited excerpts, `not_found` instead of invention) |
+| Tracker | `tracker.ts`, `service.ts` `updateApplication` | Statuses interested → closed (11); any manual move, but applied/assessment/interview/offer from a pre-submit status need "I submitted this myself" (API 409 otherwise, DB CHECK as backstop). Deadline / follow-up due states; activity history; forms filled with the assistant on the job's site are listed as evidence, never as "applied" |
+| Safe preparation | job page "Apply on the employer's site" | Shows the exact address before opening (new tab, `noopener`); filling uses the Phase 2 extension flow (site permission, preview with evidence, fill, verify); no document is uploaded and nothing is submitted by the jobs module |
+| UI | `/dashboard/jobs`, `/jobs/[id]`, `/jobs/tracker`, `/jobs/sources`, `/jobs/preferences` | Filters (keywords, title, employer, location, arrangement, employment type, max experience, found since, saved, score range, include closed), pagination, source on every listing, recalculate scores |
+| API | 12 routes under `/api/jobs` | `requireUser` first, UUID ids, zod (strict) bodies, rate limits, `no-store` |
+
+**Known limitations / deferred**
+
+- Only Greenhouse and Lever boards are fetched. Lever's API does not name the company (the board name is shown). No other provider (Indeed, LinkedIn, Naukri, Workday) is integrated.
+- Skill matching is lexical (lexicon + the user's own skills); synonyms outside the lexicon are missed. The score is provisional when the description has no clear requirements.
+- AI job summaries were not verified live: Gemini returned HTTP 503 on every attempt during the checks (the error path was verified).
+- Reminders are shown in the tracker only (no email/WhatsApp, Phase 5+). The extension does not yet link a fill to a saved job automatically.
+- Experience range, salary and industries in preferences are stored and shown but not scored.
 
 ## Phase 5 — Email and messages
 

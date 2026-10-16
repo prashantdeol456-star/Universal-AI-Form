@@ -60,6 +60,18 @@ Each entry: question, options, recommendation, and whether the owner's approval 
 | D-39 | Document lifecycle shown as uploaded / processing / ready / failed, mapped from existing statuses; deletion is the existing soft delete plus a DB trigger that purges derived content | No schema churn on a working pipeline |
 | D-40 | DOCX is read with an in-repo bounded ZIP reader, no new dependency | Small attack surface; strict size and ratio limits |
 
+### Phase 4 decisions
+
+| ID | Decision | Why |
+|---|---|---|
+| D-41 | Fetch only documented public APIs (Greenhouse Job Board, Lever Postings); never fetch LinkedIn, Naukri or arbitrary pages server-side — those jobs are added by link with details typed by the user | Terms of use, anti-bot protections, and SSRF risk of fetching user-supplied URLs |
+| D-42 | Deterministic, explainable scoring; no embeddings and no AI-generated scores | Testable and reproducible; a model's number is not evidence |
+| D-43 | **Match-score methodology**: weights required skills 40, experience 20, education 10, role/title 10, preferred skills 10, location 5, work arrangement 3, employment type 2 (sum 100). Evidence credit: confirmed profile 1.0, found in an uploaded document 0.8, in the profile but not confirmed 0.6, not found 0. Experience: min(1, years/required) × (1 if confirmed else 0.7); unknown → 0 and "needs review". Education: level ≥ required → 1 (0.7 unconfirmed); a missed *preferred* level → 0.5. Title: word overlap with preferred roles, else current designation. Location / arrangement / employment type count only when the user set the preference and the job states it. Factors that do not apply are dropped and the rest rescaled. Provisional when fewer than 3 requirements could be read, no requirement headings, or no required skills | An unspecified preference must never lower a score; every number traceable |
+| D-44 | Board refresh runs synchronously on the user's request (one bounded request per board, 10-minute minimum interval) instead of a Phase 1 task or a scheduler | One HTTP call per board needs no queue; no background crawling |
+| D-45 | Listings are per user (not a shared catalogue) | RLS stays simple and nobody learns which jobs another user looks at |
+| D-46 | "Applied" and later statuses need the user's explicit confirmation (API) and `submitted_confirmed_at` (DB CHECK); form fills are shown as evidence only | Never mark an application submitted because a form was filled |
+| D-47 | AI job summaries send only the public job text; each point must quote it | No personal data needed; quotes stop invented requirements |
+
 ## Personal WhatsApp vs WhatsApp Business
 
 - **Personal WhatsApp** (the regular app): no official API gives a third-party app access to its chats. Supported,

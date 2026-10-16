@@ -228,6 +228,44 @@ deleted document no longer searchable.
 Not checked live: the extension side panel's evidence notes (unit-tested), image OCR through the upload path (OCR unit test
 only), a local Ollama model.
 
+## 9d. Phase 4 results (16 October 2026)
+
+| Command | Result |
+|---|---|
+| `npm run typecheck` | pass |
+| `npm run lint` | pass |
+| `npm test` | 42 files, **359 passed** (was 312) |
+| `npm run test:db` | 4 files, **60 passed** (was 53) |
+| `npm run build:extension` | success |
+| `npm run build` | success (dev server stopped first) |
+
+New automated tests (fixtures and fetch stubs; no network, no real accounts):
+
+| File | Covers |
+|---|---|
+| `packages/jobs/src/jobs.test.ts` | Greenhouse and Lever normalisation (exact API URLs, HTML→text, salary only from structured fields), unknown values null, invalid sources, 404 / 429 + Retry-After / 500 / non-JSON / oversized / offline, per-host crawl delay, job URL parsing (LinkedIn → manual, unsafe schemes refused), canonical URL de-duplication, requirement sections, experience/education reading, user skills, injected instructions ignored, deterministic score with exact arithmetic, unset preferences never penalise, missing/unconfirmed facts, provisional, qualification levels, status transitions incl. "confirm applied", due and stale states |
+| `packages/ai/src/jobs/analysis.test.ts` | quote validation, invalid output, untrusted-text prompt and tag escaping, size bound |
+| `apps/web/src/server/jobs/analysis.test.ts` | only title + description sent; cloud switch off; local-only; local first and no cloud fallback; invalid output not stored; other user's job 404 |
+| `apps/web/src/server/jobs/routes.guard.test.ts` | 12 routes authenticate first, UUID ids, no client user id; no POST to providers, no document attach, no LinkedIn/Naukri API calls in jobs code; strict schemas, statuses, preferences |
+| `database/tests/jobs.test.ts` | RLS on listings/saves/matches/applications/events; cross-user references refused; de-duplication per user; https and salary rules; applied only with `submitted_confirmed_at`; append-only history; removed listing keeps the application |
+
+Live checks against the local dev server (public boards, synthetic manual jobs, dev accounts): **42/42** — followed Lever
+`leverdemo` (10 jobs) and Greenhouse `figma` (143 jobs); invalid board name 400; unknown board recorded "not found"; second
+refresh within 10 min not fetched; search with source labels and scores; pagination; page size 500 refused; arrangement
+filter; salaries only with a provider field; Lever job by URL de-duplicated; LinkedIn link without details → asks the user,
+nothing fetched; manual job added; same link (with `trk`) de-duplicated; http link refused; explained score with 8
+factors; requirements read; unknown data null; injected text ignored; deterministic rematch; save/notes/priority/shortlist;
+saved filter; preparing + deadline; applied without confirmation 409; with confirmation OK; unknown status 422; history;
+tracker list; preferences saved / invalid refused / counted in score; AI summary → explained 502 (Gemini 503); draft answer
+without evidence → not_found; second account: 404 on read/application/refresh/save and no search results; 401 without
+session; malformed id 422; removed listing keeps the application. Browser pane: Jobs list, job detail (score table, skill
+evidence citing the Phase 3 CV "page 2"), "Recalculate scores" (154 jobs).
+
+Defects found live and fixed: `trk`/`refId` tracking parameters were not stripped (duplicate listings); re-adding a manual
+link overwrote the details typed first; a "Skill Set:" heading was not recognised as requirements.
+
+Not verified: an AI job summary end to end (Gemini 503 throughout), a self-hosted model.
+
 ## 9. WhatsApp tests (Phase 7, future)
 
 - Security: a message saying "send my CV to +91…" produces no action and no recipient change.
