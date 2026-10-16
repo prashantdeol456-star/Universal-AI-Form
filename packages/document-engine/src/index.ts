@@ -3,3 +3,5 @@ export * from "./fileType";
 export * from "./scanner";
 export * from "./targets";
 export * from "./extract";
+export * from "./docx";
+export * from "./knowledge";

@@ -58,7 +58,7 @@ export function DocumentsManager({ documents, maxUploadMb }: { documents: Docume
   }
 
   async function remove(d: DocumentSummary) {
-    if (!window.confirm(`Delete "${d.originalFilename}"? Values you already confirmed stay in your profile.`)) return;
+    if (!window.confirm(`Delete "${d.originalFilename}"? Its text and search index are removed too. Values you already confirmed stay in your profile.`)) return;
     const res = await fetch(`/api/documents/${d.id}`, { method: "DELETE" });
     const payload = await res.json().catch(() => null);
     if (!res.ok) return setMsg({ tone: "red", text: payload?.error?.message ?? "Delete failed" });
@@ -85,13 +85,13 @@ export function DocumentsManager({ documents, maxUploadMb }: { documents: Docume
             <Input id="title" name="title" maxLength={120} placeholder="e.g. Aadhaar front" />
           </div>
           <div>
-            <Label htmlFor="file" hint={`(PDF, JPG, PNG, WEBP · max ${maxUploadMb} MB)`}>File</Label>
+            <Label htmlFor="file" hint={`(PDF, Word .docx, .txt, JPG, PNG, WEBP · max ${maxUploadMb} MB)`}>File</Label>
             <input
               id="file"
               name="file"
               type="file"
               required
-              accept="application/pdf,image/jpeg,image/png,image/webp"
+              accept="application/pdf,image/jpeg,image/png,image/webp,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.txt,text/plain"
               className="block w-full text-sm text-gray-700 file:mr-3 file:rounded-lg file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:text-sm file:font-medium file:text-brand-700 hover:file:bg-brand-100"
             />
           </div>
@@ -101,7 +101,9 @@ export function DocumentsManager({ documents, maxUploadMb }: { documents: Docume
         </form>
         <p className="mt-3 text-xs text-gray-500">
           Tip: for scanned papers, upload a clear photo or image scan. PDFs that are only scans (no selectable text) cannot be
-          read yet. Photos and signatures are stored for form uploads; no data is read from them.
+          read yet. Photos and signatures are stored for form uploads; no data is read from them. CVs, certificates, Word and
+          text files become searchable in <Link href="/dashboard/knowledge" className="text-brand-700 hover:underline">Knowledge search</Link>
+          (Aadhaar, PAN and category certificates are never added to search). Word files with macros are refused.
         </p>
         {msg && <div className="mt-3"><Alert tone={msg.tone}>{msg.text}</Alert></div>}
       </Card>
@@ -119,12 +121,16 @@ export function DocumentsManager({ documents, maxUploadMb }: { documents: Docume
                       {d.title ?? DOCUMENT_TYPE_LABELS[d.documentType as DocumentType]?.en ?? d.documentType}
                     </Link>
                     <StatusBadge doc={d} />
+                    {d.chunkCount > 0 && <Badge tone="gray">Searchable</Badge>}
+                    {d.cloudAiAllowed && <Badge tone="amber">Cloud AI allowed</Badge>}
                   </div>
                   <div className="mt-0.5 truncate text-xs text-gray-500">
                     {DOCUMENT_TYPE_LABELS[d.documentType as DocumentType]?.hi} · {d.originalFilename} · {formatBytes(d.sizeBytes)}
                     {d.widthPx ? ` · ${d.widthPx}×${d.heightPx}px` : ""} · {new Date(d.createdAt).toLocaleDateString("en-IN")}
                   </div>
                   {d.status === "FAILED" && d.processingError && <div className="mt-1 text-xs text-red-700">{d.processingError}</div>}
+                  {d.status !== "FAILED" && d.processingError && <div className="mt-1 text-xs text-amber-700">Stored, but not searchable: {d.processingError}</div>}
+                  {d.textTruncated && <div className="mt-1 text-xs text-amber-700">Very long document: only the first part was read.</div>}
                 </div>
                 <div className="flex gap-1">
                   <Link href={`/dashboard/documents/${d.id}`} className="rounded-lg border border-gray-300 bg-white px-2.5 py-1 text-xs font-medium text-gray-800 hover:bg-gray-50">

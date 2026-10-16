@@ -11,7 +11,7 @@ export const GET = route<{ params: Promise<{ id: string }> }>(async (req: NextRe
   const download = req.nextUrl.searchParams.get("download") === "1";
   return new Response(new Uint8Array(data), {
     headers: {
-      "Content-Type": mime,
+      "Content-Type": mime === "text/plain" ? "text/plain; charset=utf-8" : mime,
       "Content-Length": String(data.length),
       "Content-Disposition": `${download ? "attachment" : "inline"}; filename*=UTF-8''${encodeURIComponent(filename)}`,
       "Cache-Control": "private, no-store",

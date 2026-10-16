@@ -1,6 +1,6 @@
 import "server-only";
 import { createHash, randomUUID } from "node:crypto";
-import { detectFileType, isExtractable, pdfHasActiveContent, sanitizeFilename } from "@ufa/document-engine";
+import { declaredExtension, detectFileType, docxText, DocxError, isExtractable, pdfHasActiveContent, sanitizeFilename } from "@ufa/document-engine";
 import { imageInfo } from "@ufa/document-engine/ocr";
 import { DOCUMENT_TYPES, maskValue, type DocumentType } from "@ufa/shared";
 import { signResource, verifySignedResource } from "@ufa/security";
@@ -11,7 +11,7 @@ import { badRequest, conflict, forbidden, HttpError, notFound } from "../http";
 import { updateFieldTx } from "../profile/service";
 import { storage } from "../storage";
 import { isSensitiveKey, normalizeValue, readStored, storeValue, upsertConflict, type StoredCandidate } from "./conflicts";
-import type { ConfirmResult, ConflictView, DocumentDetail, DocumentSummary, ExtractionView } from "./types";
+import { lifecycleOf, type ConfirmResult, type ConflictView, type DocumentDetail, type DocumentSummary, type ExtractionView } from "./types";
 import { kickDocumentWorker } from "./worker";
 
 interface DocRow {
@@ -31,6 +31,10 @@ interface DocRow {
   text_engine: string | null;
   text_confidence: string | null;
   local_ai_used: boolean;
+  cloud_ai_allowed: boolean;
+  page_count: number | null;
+  chunk_count: number;
+  text_truncated: boolean;
   created_at: Date;
   processed_at: Date | null;
   pending: number;
@@ -39,7 +43,7 @@ interface DocRow {
 
 const DOC_COLUMNS = `d.id, d.user_id, d.document_type, d.title, d.storage_key, d.original_filename, d.mime_type, d.size_bytes,
   d.width_px, d.height_px, d.status, d.scan_status, d.processing_error, d.text_engine, d.text_confidence, d.local_ai_used,
-  d.created_at, d.processed_at,
+  d.cloud_ai_allowed, d.page_count, d.chunk_count, d.text_truncated, d.created_at, d.processed_at,
   (select count(*)::int from document_extractions e where e.document_id = d.id and e.status = 'PENDING') as pending,
   (select count(*)::int from document_extractions e where e.document_id = d.id and e.status in ('CONFIRMED','EDITED')) as confirmed`;
 
@@ -61,6 +65,11 @@ function toSummary(r: DocRow): DocumentSummary {
     confirmedCount: r.confirmed,
     createdAt: r.created_at.toISOString(),
     processedAt: r.processed_at?.toISOString() ?? null,
+    lifecycle: lifecycleOf(r.status),
+    cloudAiAllowed: r.cloud_ai_allowed,
+    pageCount: r.page_count,
+    chunkCount: r.chunk_count,
+    textTruncated: r.text_truncated,
   };
 }
 
@@ -78,8 +87,22 @@ export async function uploadDocument(
   if (input.file.size > maxBytes) throw new HttpError(413, "too_large", `File is larger than ${env().MAX_UPLOAD_MB} MB`);
 
   const buf = Buffer.from(await input.file.arrayBuffer());
-  const type = detectFileType(buf);
-  if (!type) throw new HttpError(415, "unsupported_type", "Only PDF, JPG, PNG and WEBP files are accepted");
+  const type = detectFileType(buf, input.file.name);
+  if (!type) throw new HttpError(415, "unsupported_type", "Only PDF, Word (.docx), text (.txt), JPG, PNG and WEBP files are accepted");
+  // The name must not claim another type than the content (e.g. a PDF renamed to .docx).
+  const declared = declaredExtension(input.file.name);
+  if (declared && declared !== type.ext) throw new HttpError(415, "type_mismatch", `The file is named .${declared} but its content is ${type.ext.toUpperCase()}`);
+  if (type.kind === "docx") {
+    try {
+      docxText(buf);
+    } catch (err) {
+      if (err instanceof DocxError) {
+        if (err.code === "macro") await audit({ actorId: actor.id, actorRole: actor.role, action: "security.upload_rejected", subjectUserId: actor.id, ip, metadata: { reason: "docx_macro" } });
+        throw new HttpError(422, err.code === "macro" ? "unsafe_file" : "corrupt_file", err.message);
+      }
+      throw err;
+    }
+  }
   if (type.kind === "pdf" && pdfHasActiveContent(buf)) {
     await audit({ actorId: actor.id, actorRole: actor.role, action: "security.upload_rejected", subjectUserId: actor.id, ip, metadata: { reason: "pdf_active_content" } });
     throw new HttpError(422, "unsafe_file", "This PDF contains scripts or embedded files and was rejected for safety");
@@ -392,4 +415,16 @@ export async function readDocumentForAttach(actor: Actor, id: string, domain: st
   if (!row) throw notFound("Document not found");
   if (row.scan_status !== "CLEAN" && row.scan_status !== "SKIPPED") throw forbidden("This file has not passed the safety scan, so it cannot be attached.");
   return { data: await storage().get(row.storage_key), mime: row.mime_type, filename: row.original_filename };
+}
+
+// --- Knowledge base consent (Phase 3) ----------------------------------------------
+
+/** Lets cloud AI read relevant excerpts of this one document (off by default). */
+export async function setDocumentCloudAi(actor: Actor, id: string, allowed: boolean, ip?: string): Promise<{ cloudAiAllowed: boolean }> {
+  return asUser(actor, async (tx) => {
+    const rows = await tx`update documents set cloud_ai_allowed = ${allowed} where id = ${id} and user_id = ${actor.id} and deleted_at is null returning id`;
+    if (!rows.length) throw notFound("Document not found");
+    await audit({ actorId: actor.id, actorRole: actor.role, action: allowed ? "document.cloud_ai_allowed" : "document.cloud_ai_revoked", targetType: "document", targetId: id, subjectUserId: actor.id, ip }, tx);
+    return { cloudAiAllowed: allowed };
+  });
 }

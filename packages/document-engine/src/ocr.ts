@@ -3,7 +3,8 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import sharp from "sharp";
-import type { DetectedType } from "./fileType";
+import { docxText } from "./docx";
+import { decodePlainText, type DetectedType } from "./fileType";
 
 /**
  * Text extraction:
@@ -11,13 +12,34 @@ import type { DetectedType } from "./fileType";
  *  - Images: sharp preprocessing (EXIF rotate, grayscale, normalize, upscale) + Tesseract (English + Hindi).
  *  - Scanned PDFs (no text layer): reported as ScannedPdfError so the UI can ask for a photo/scan image instead.
  *    Rasterising PDFs for OCR is a planned improvement.
+ *  - DOCX: the visible text of word/document.xml (docx.ts; nothing in the file is executed).
+ *  - TXT: UTF-8 text only.
+ * PDFs keep one entry per page in `pageTexts` so search results can cite the page.
  * Tesseract language data ships inside npm packages; nothing is downloaded at runtime.
  */
 export interface TextResult {
   text: string;
-  engine: "pdf-text" | "tesseract";
+  engine: "pdf-text" | "tesseract" | "docx" | "plain-text";
   confidence: number | null;
   pages?: number;
+  /** PDFs: the text of each page read (index 0 = page 1). */
+  pageTexts?: string[];
+  /** More pages or text than the limits allow: only the first part was read. */
+  truncated?: boolean;
+}
+
+export const TEXT_LIMITS = {
+  /** PDF pages read for text. */
+  maxPdfPages: 300,
+  /** Characters kept from any document. */
+  maxChars: 1_500_000,
+} as const;
+
+export class EmptyDocumentError extends Error {
+  constructor() {
+    super("No text was found in this document.");
+    this.name = "EmptyDocumentError";
+  }
 }
 
 export class ScannedPdfError extends Error {
@@ -39,10 +61,18 @@ export async function imageInfo(buf: Buffer): Promise<{ width: number; height: n
 async function pdfText(buf: Buffer): Promise<TextResult> {
   const { extractText, getDocumentProxy } = await import("unpdf");
   const pdf = await getDocumentProxy(new Uint8Array(buf));
-  const { totalPages, text } = await extractText(pdf, { mergePages: true });
-  const merged = Array.isArray(text) ? text.join("\n") : text;
+  const { totalPages, text } = await extractText(pdf, { mergePages: false });
+  const all = Array.isArray(text) ? text : [text];
+  let budget: number = TEXT_LIMITS.maxChars;
+  const pageTexts: string[] = [];
+  for (const t of all.slice(0, TEXT_LIMITS.maxPdfPages)) {
+    if (budget <= 0) break;
+    pageTexts.push(t.slice(0, budget));
+    budget -= t.length;
+  }
+  const merged = pageTexts.join("\n");
   if (merged.replace(/\s/g, "").length < 30) throw new ScannedPdfError();
-  return { text: merged, engine: "pdf-text", confidence: null, pages: totalPages };
+  return { text: merged, engine: "pdf-text", confidence: null, pages: totalPages, pageTexts, truncated: pageTexts.length < all.length || budget < 0 };
 }
 
 /** Grayscale, auto-rotate, contrast-normalize, and upscale small images for better OCR. */
@@ -126,5 +156,11 @@ async function ocrImage(buf: Buffer, timeoutMs: number): Promise<TextResult> {
 }
 
 export async function extractText(buf: Buffer, type: DetectedType, opts: { timeoutMs?: number } = {}): Promise<TextResult> {
-  return type.kind === "pdf" ? pdfText(buf) : ocrImage(buf, opts.timeoutMs ?? 120_000);
+  if (type.kind === "pdf") return pdfText(buf);
+  if (type.kind === "docx" || type.kind === "text") {
+    const raw = type.kind === "docx" ? docxText(buf).text : decodePlainText(buf);
+    if (raw === null || !raw.replace(/\s/g, "")) throw new EmptyDocumentError();
+    return { text: raw.slice(0, TEXT_LIMITS.maxChars), engine: type.kind === "docx" ? "docx" : "plain-text", confidence: null, truncated: raw.length > TEXT_LIMITS.maxChars };
+  }
+  return ocrImage(buf, opts.timeoutMs ?? 120_000);
 }

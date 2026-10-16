@@ -2,19 +2,22 @@ import "server-only";
 import {
   ClamAVScanner,
   detectFileType,
+  DocxError,
   extractFields,
   isExtractable,
+  KNOWLEDGE_EXCLUDED_TYPES,
   LocalAIDocumentExtractor,
   NoopScanner,
   type VirusScanner,
 } from "@ufa/document-engine";
-import { extractText, ScannedPdfError } from "@ufa/document-engine/ocr";
+import { EmptyDocumentError, extractText, ScannedPdfError } from "@ufa/document-engine/ocr";
 import type { DocumentType } from "@ufa/shared";
 import { redact } from "@ufa/security";
 import { audit } from "../audit";
 import { notify } from "../notifications";
 import { db, encryptValue } from "../db";
 import { env } from "../env";
+import { storeChunks } from "../knowledge/searchIndex";
 import { storage } from "../storage";
 import { hasDisagreement, normalizeValue, readStored, storeValue, upsertConflict, type PlainCandidate } from "./conflicts";
 
@@ -23,8 +26,11 @@ import { hasDisagreement, normalizeValue, readStored, storeValue, upsertConflict
  * instrumentation.ts). PostgreSQL is the queue: documents in status UPLOADED are
  * claimed with FOR UPDATE SKIP LOCKED, so a second process could safely share the work.
  *
- *   scan → read text (PDF text layer / OCR) → rules (+ local AI) → validate →
- *   store PENDING extractions → flag conflicts → EXTRACTED
+ *   scan → read text (PDF text layer / OCR / DOCX / TXT) → rules (+ local AI) → validate →
+ *   store PENDING extractions → flag conflicts → encrypted search chunks → EXTRACTED
+ *
+ * A re-run (crash, stale lease, reprocess) replaces extractions and chunks in one
+ * transaction, so duplicate runs never duplicate content.
  *
  * Nothing is written to the profile here: every value waits for the user's confirmation.
  */
@@ -36,6 +42,7 @@ interface ClaimedDoc {
   user_id: string;
   document_type: DocumentType;
   storage_key: string;
+  mime_type: string;
   processing_attempts: number;
 }
 
@@ -58,7 +65,7 @@ async function claimNext(): Promise<ClaimedDoc | null> {
         order by created_at
         for update skip locked
         limit 1)
-     returning id, user_id, document_type, storage_key, processing_attempts`;
+     returning id, user_id, document_type, storage_key, mime_type, processing_attempts`;
   return doc ?? null;
 }
 
@@ -82,7 +89,7 @@ async function fail(doc: ClaimedDoc, message: string, final: boolean) {
 export async function processDocument(doc: ClaimedDoc): Promise<void> {
   const sql = db().system;
   const buf = await storage().get(doc.storage_key);
-  const type = detectFileType(buf);
+  const type = detectFileType(buf, doc.mime_type);
   if (!type) return fail(doc, "Unsupported file type", true);
 
   // 1. Antivirus
@@ -96,8 +103,10 @@ export async function processDocument(doc: ClaimedDoc): Promise<void> {
   }
   if (scan.status === "ERROR") return fail(doc, "Virus scan unavailable, will retry", doc.processing_attempts >= MAX_ATTEMPTS);
 
-  // 2. Photos, signatures, "other": stored for form uploads, no extraction.
-  if (!isExtractable(doc.document_type)) {
+  // 2. Photos and signatures (and identity documents for the knowledge base) are not searchable.
+  const extractable = isExtractable(doc.document_type);
+  const indexable = !KNOWLEDGE_EXCLUDED_TYPES.has(doc.document_type);
+  if (!extractable && !indexable) {
     await sql`update documents set status = 'EXTRACTED', processed_at = now(), processing_error = null where id = ${doc.id}`;
     return;
   }
@@ -107,15 +116,23 @@ export async function processDocument(doc: ClaimedDoc): Promise<void> {
   try {
     text = await extractText(buf, type, { timeoutMs: env().OCR_TIMEOUT_MS });
   } catch (err) {
-    if (err instanceof ScannedPdfError) return fail(doc, err.message, true);
+    if (err instanceof ScannedPdfError || err instanceof EmptyDocumentError || err instanceof DocxError) {
+      if (extractable) return fail(doc, err.message, true);
+      // Kept for form uploads; it just cannot be searched.
+      await sql`update documents set status = 'EXTRACTED', processed_at = now(), processing_error = ${err.message}, processing_started_at = null where id = ${doc.id}`;
+      return;
+    }
     throw err;
   }
 
   // 4. Fields (rules, optionally merged with local AI)
-  const outcome = await extractFields(doc.document_type, text.text, localAi());
+  const outcome = extractable
+    ? await extractFields(doc.document_type, text.text, localAi())
+    : { candidates: [] as Awaited<ReturnType<typeof extractFields>>["candidates"], localAiUsed: false, localAiError: undefined as string | undefined };
   if (outcome.localAiError) console.warn(`[documents] local AI unavailable for ${doc.id}: ${redact(outcome.localAiError)}`);
 
   // 5. Persist + 6. conflict detection, atomically.
+  let chunked = { chunkCount: 0, truncated: false };
   await sql.begin(async (tx) => {
     await tx`delete from document_extractions where document_id = ${doc.id} and status = 'PENDING'`;
     const inserted: Array<{ id: string; fieldKey: string; value: string }> = [];
@@ -158,15 +175,20 @@ export async function processDocument(doc: ClaimedDoc): Promise<void> {
                 where user_id = ${doc.user_id} and field_key = ${fieldKey} and status = 'PENDING'`;
     }
 
+    // 7. Searchable chunks (encrypted text + blind keyword index), page by page for PDFs.
+    const pages = text.pageTexts?.length ? text.pageTexts.map((t, i) => ({ page: i + 1, text: t })) : [{ page: null, text: text.text }];
+    if (indexable) chunked = await storeChunks(tx, doc, pages);
+
     await tx`
       update documents
          set status = 'EXTRACTED', processed_at = now(), processing_error = null, processing_started_at = null,
+             chunk_count = ${chunked.chunkCount}, page_count = ${text.pages ?? null}, text_truncated = ${Boolean(text.truncated || chunked.truncated)},
              extracted_text = ${encryptValue(text.text)}, text_engine = ${text.engine},
              text_confidence = ${text.confidence === null ? null : Math.round(text.confidence * 1000) / 1000},
              local_ai_used = ${outcome.localAiUsed}
        where id = ${doc.id}`;
   });
-  await audit({ actorId: null, actorRole: "SYSTEM", action: "document.processed", targetType: "document", targetId: doc.id, subjectUserId: doc.user_id, metadata: { fields: outcome.candidates.length, engine: text.engine, localAi: outcome.localAiUsed } });
+  await audit({ actorId: null, actorRole: "SYSTEM", action: "document.processed", targetType: "document", targetId: doc.id, subjectUserId: doc.user_id, metadata: { fields: outcome.candidates.length, engine: text.engine, localAi: outcome.localAiUsed, chunks: chunked.chunkCount } });
   await notify(doc.user_id, {
     type: "document_processed",
     title: "Your document has been read",

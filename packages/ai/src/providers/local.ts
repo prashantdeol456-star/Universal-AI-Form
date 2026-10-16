@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { EVIDENCE_JSON_SCHEMA, evidenceSystemPrompt, evidenceUserPrompt, type EvidenceAnswerInput } from "../knowledge/evidence";
 import { localMappingFormat, localMappingSystemPrompt, localMappingUserPrompt } from "./prompt";
 import type { AIProvider, FieldSuggestion, MapFieldsInput, MapFieldsResult } from "./types";
 
@@ -75,6 +76,21 @@ export class LocalAIProvider implements AIProvider {
       }
     }
     return { suggestions: out };
+  }
+
+  /** Knowledge base answers on the self-hosted model (no data leaves the server). Reply validated by the caller. */
+  async answerFromEvidence(input: EvidenceAnswerInput): Promise<{ raw: string }> {
+    const body = (await this.post("/api/chat", {
+      model: this.model,
+      stream: false,
+      options: { temperature: 0.1 },
+      format: EVIDENCE_JSON_SCHEMA,
+      messages: [
+        { role: "system", content: evidenceSystemPrompt(input) },
+        { role: "user", content: evidenceUserPrompt(input) },
+      ],
+    })) as { message?: { content?: string } };
+    return { raw: body.message?.content ?? "" };
   }
 
   async embed(texts: string[]): Promise<number[][]> {

@@ -16,6 +16,8 @@ export interface Choice {
   overwrite: boolean;
   /** The user replaced the profile value with their own for this form only. */
   override?: boolean;
+  /** The user chose an unconfirmed value found in this document (knowledge base). */
+  fromDocument?: string;
 }
 export type Selection = Record<string, Choice>;
 
@@ -159,11 +161,16 @@ function ManualInput({ field: f, value, onChange }: { field: NormalizedField; va
 
 /** Where a previewed value comes from, in words: verified fact, profile value, AI match or the user's own text. */
 export function sourceText(i: PlannedItem): string {
-  if (i.source === "manual") return i.choice.override ? "typed by you (replaces your profile value here)" : i.mapping?.savedAnswer && i.mapping.savedAnswer === i.display ? "your saved answer" : "typed by you";
+  if (i.source === "manual") {
+    if (i.choice.fromDocument && i.choice.manualValue.trim() === i.mapping?.evidence?.suggestion?.value) return `from “${i.choice.fromDocument}” (not confirmed, chosen by you)`;
+    return i.choice.override ? "typed by you (replaces your profile value here)" : i.mapping?.savedAnswer && i.mapping.savedAnswer === i.display ? "your saved answer" : "typed by you";
+  }
   const m = i.mapping!;
   const pct = `${Math.round(m.confidence * 100)}%`;
   const via = m.sources.includes("gemini") || m.sources.includes("local_ai") ? "AI match, please check" : m.sources.some((s) => s.startsWith("kb_")) ? "matched before" : "matched by its label";
-  return `${m.profileFieldLabel ?? m.profileFieldKey} · ${m.valueVerified ? "verified in your profile" : "from your profile (not verified)"} · ${via} · ${pct}`;
+  const where = m.evidence?.document ? ` (from “${m.evidence.document.title}”)` : "";
+  const status = m.evidence?.status === "conflicting" ? "your sources disagree, check it" : m.valueVerified ? `verified in your profile${where}` : `from your profile (not verified)${where}`;
+  return `${m.profileFieldLabel ?? m.profileFieldKey} · ${status} · ${via} · ${pct}`;
 }
 
 /** Everything that will be typed into the page, shown before anything happens. */

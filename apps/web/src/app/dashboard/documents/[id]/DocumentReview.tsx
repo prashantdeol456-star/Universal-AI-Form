@@ -9,6 +9,7 @@ import { api } from "@/lib/api-client";
 import type { ConflictView, DocumentDetail, ExtractionView } from "@/server/documents/types";
 import { ConflictResolver } from "../ConflictResolver";
 import { formatBytes, StatusBadge } from "../DocumentsManager";
+import { KnowledgeCard } from "./KnowledgeCard";
 
 const METHOD_LABEL: Record<string, string> = {
   rules: "Pattern match",
@@ -57,7 +58,7 @@ export function DocumentReview({ doc, conflicts }: { doc: DocumentDetail; confli
             {doc.widthPx ? ` · ${doc.widthPx}×${doc.heightPx}px` : ""}
           </p>
         </div>
-        {doc.extractable && (doc.status === "FAILED" || doc.status === "EXTRACTED") && (
+        {(doc.extractable || doc.chunkCount > 0 || doc.processingError) && (doc.status === "FAILED" || doc.status === "EXTRACTED") && (
           <Button variant="secondary" size="sm" onClick={reprocess}>
             Read again
           </Button>
@@ -67,6 +68,7 @@ export function DocumentReview({ doc, conflicts }: { doc: DocumentDetail; confli
       {msg && <Alert tone={msg.tone}>{msg.text}</Alert>}
       {doc.status === "FAILED" && <Alert>{doc.processingError ?? "Processing failed."}</Alert>}
       {processing && <Alert tone="blue">Reading your document… this page updates automatically.</Alert>}
+      <KnowledgeCard doc={doc} />
       {doc.scanStatus === "SKIPPED" && !processing && (
         <p className="text-xs text-gray-500">Antivirus scanning is not enabled on this server; the file passed type and safety checks.</p>
       )}
@@ -76,7 +78,12 @@ export function DocumentReview({ doc, conflicts }: { doc: DocumentDetail; confli
           {doc.mimeType.startsWith("image/") ? (
             <img src={doc.fileUrl} alt={`${typeLabel?.en ?? "Document"} preview`} className="w-full rounded-lg border border-gray-200" />
           ) : (
-            <p className="text-sm text-gray-600">PDF document.</p>
+            <p className="text-sm text-gray-600">
+              {doc.mimeType === "application/pdf" ? "PDF document" : doc.mimeType === "text/plain" ? "Text file" : "Word document"}.{" "}
+              <a href={`${doc.fileUrl}&download=1`} className="text-brand-700 hover:underline">
+                Download
+              </a>
+            </p>
           )}
           <div className="mt-3 flex gap-3 text-sm">
             <a href={doc.fileUrl} target="_blank" rel="noopener noreferrer" className="text-brand-600 hover:underline">

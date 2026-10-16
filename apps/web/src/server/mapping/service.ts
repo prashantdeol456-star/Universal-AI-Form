@@ -109,6 +109,64 @@ export interface FieldMappingView {
   candidates: Array<{ fieldKey: string; label: string; confidence: number }>;
   /** The user answered this exact question before (not a profile field, or no profile value). */
   savedAnswer: string | null;
+  /** Where the value comes from and how sure the user's own sources are (knowledge base, Phase 3). */
+  evidence: FieldEvidence | null;
+}
+
+export interface FieldEvidence {
+  /**
+   * verified: confirmed by the user · unverified: in the profile, not confirmed ·
+   * conflicting: the user's sources disagree (never auto-filled) ·
+   * unconfirmed_document: no profile value, but a document suggests one (user must confirm or type it) ·
+   * missing: nothing anywhere.
+   */
+  status: "verified" | "unverified" | "conflicting" | "unconfirmed_document" | "missing";
+  /** How the profile value got there. */
+  origin: string | null;
+  /** The document a profile value was confirmed from. */
+  document: { id: string; title: string } | null;
+  /** A value found in a document but not confirmed yet (masked when sensitive). */
+  suggestion: { value: string; documentId: string; documentTitle: string } | null;
+}
+
+interface Provenance {
+  profile: Map<string, { source: string; verified: boolean; document: { id: string; title: string } | null }>;
+  suggestions: Map<string, { value: string; documentId: string; documentTitle: string }>;
+  conflicts: Set<string>;
+}
+
+/** Profile provenance, unconfirmed document values and open conflicts for the mapped fields. */
+async function loadProvenance(tx: TransactionSql, userId: string): Promise<Provenance> {
+  const profile = await tx<{ field_key: string; source: string; verified: boolean; doc_id: string | null; doc_title: string | null }[]>`
+    select p.field_key, p.source, p.verified, d.id as doc_id, coalesce(d.title, d.original_filename) as doc_title
+      from profile_fields p left join documents d on d.id = p.source_document_id and d.deleted_at is null
+     where p.user_id = ${userId} and p.deleted_at is null`;
+  const pending = await tx<{ field_key: string; extracted_value: string; is_encrypted: boolean; document_id: string; doc_title: string }[]>`
+    select e.field_key, e.extracted_value, e.is_encrypted, e.document_id, coalesce(d.title, d.original_filename) as doc_title
+      from document_extractions e join documents d on d.id = e.document_id and d.deleted_at is null
+     where e.user_id = ${userId} and e.status = 'PENDING'
+     order by e.created_at desc`;
+  const open = await tx<{ field_key: string }[]>`select field_key from document_conflicts where user_id = ${userId} and status = 'OPEN'`;
+  const suggestions = new Map<string, { value: string; documentId: string; documentTitle: string }>();
+  const pendingValues = new Map<string, Set<string>>();
+  for (const e of pending) {
+    const plain = readStored({ value: e.extracted_value, is_encrypted: e.is_encrypted });
+    const set = pendingValues.get(e.field_key) ?? new Set<string>();
+    set.add(plain.normalize("NFKC").replace(/\s+/g, " ").trim().toLowerCase());
+    pendingValues.set(e.field_key, set);
+    if (!suggestions.has(e.field_key)) {
+      const sensitive = (getFieldDef(e.field_key)?.sensitivity ?? "normal") !== "normal";
+      suggestions.set(e.field_key, { value: sensitive ? maskValue(plain) : plain, documentId: e.document_id, documentTitle: e.doc_title });
+    }
+  }
+  const conflicts = new Set(open.map((c) => c.field_key));
+  // Two documents suggesting different values for an empty profile field is also a conflict.
+  for (const [key, values] of pendingValues) if (values.size > 1) conflicts.add(key);
+  return {
+    profile: new Map(profile.map((p) => [p.field_key, { source: p.source, verified: p.verified, document: p.doc_id && p.doc_title ? { id: p.doc_id, title: p.doc_title } : null }])),
+    suggestions,
+    conflicts,
+  };
 }
 
 export interface MapResultView {
@@ -236,7 +294,7 @@ export async function mapFormForUser(actor: Actor, snapshot: FormSnapshot, cafe?
   const customerPref = cafe
     ? (await db().system<{ cloud_ai_enabled: boolean }[]>`select cloud_ai_enabled from profiles where user_id = ${cafe.customerId}`)[0]
     : undefined;
-  const { profile, knowledge, cloudAiAllowed, geminiFieldsToday, formChange, savedAnswers } = await asUser(actor, async (tx) => {
+  const { profile, knowledge, cloudAiAllowed, geminiFieldsToday, formChange, savedAnswers, provenance } = await asUser(actor, async (tx) => {
     const [own] = cafe ? [undefined] : await tx<{ cloud_ai_enabled: boolean }[]>`select cloud_ai_enabled from profiles where user_id = ${actor.id}`;
     const pref = cafe ? customerPref : own;
     const [used] = (await tx`
@@ -254,6 +312,8 @@ export async function mapFormForUser(actor: Actor, snapshot: FormSnapshot, cafe?
       formChange: change,
       // Own answers only: never offered in café mode.
       savedAnswers: cafe ? new Map<string, { id: string; answer: string }>() : await findSavedAnswers(tx, actor.id, snapshot.fields.map((f) => f.label)),
+      // The customer's documents are not shown to a café operator.
+      provenance: cafe ? null : await loadProvenance(tx, actor.id),
     };
   });
 
@@ -304,6 +364,20 @@ export async function mapFormForUser(actor: Actor, snapshot: FormSnapshot, cafe?
     fields: result.mappings.map((m) => {
       const key = m.profileFieldKey;
       const pv = key ? profile.get(key) : undefined;
+      const prov = key && provenance ? provenance.profile.get(key) : undefined;
+      const conflicting = Boolean(key && provenance?.conflicts.has(key));
+      const suggestion = key && !pv && provenance ? provenance.suggestions.get(key) ?? null : null;
+      const evidence: FieldEvidence | null =
+        key && provenance
+          ? {
+              status: conflicting ? "conflicting" : pv ? (pv.verified ? "verified" : "unverified") : suggestion ? "unconfirmed_document" : "missing",
+              origin: prov?.source ?? null,
+              document: prov?.document ?? null,
+              suggestion,
+            }
+          : null;
+      // The user's own sources disagree: never filled without the user's review.
+      const decision = conflicting && m.decision === "AUTO_FILL" ? ("USER_REVIEW" as const) : m.decision;
       return {
         fieldId: m.fieldId,
         profileFieldKey: key,
@@ -313,12 +387,18 @@ export async function mapFormForUser(actor: Actor, snapshot: FormSnapshot, cafe?
         valueVerified: pv?.verified ?? false,
         optionMatch: m.optionMatch,
         confidence: m.confidence,
-        decision: m.decision,
+        decision,
         // In café mode a missing value may simply not be shared by the customer.
-        reason: cafe && key && !pv && !cafe.permissions.includes(cafePermissionForField(key) ?? ("bank" as never)) ? "not_shared" : m.reason,
+        reason:
+          cafe && key && !pv && !cafe.permissions.includes(cafePermissionForField(key) ?? ("bank" as never))
+            ? "not_shared"
+            : decision !== m.decision
+              ? "conflicting_sources"
+              : m.reason,
         sources: [...new Set(m.evidence.filter((ev) => ev.weight > 0).map((ev) => ev.source))],
         candidates: m.candidates.map((c) => ({ ...c, label: label(c.fieldKey)?.en ?? c.fieldKey })),
         savedAnswer: pv ? null : savedAnswers.get(normalizeQuestion(labelById.get(m.fieldId) ?? ""))?.answer ?? null,
+        evidence,
       };
     }),
   };

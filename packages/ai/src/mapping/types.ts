@@ -38,7 +38,8 @@ export type DecisionReason =
   | "payment"
   | "suspicious"
   | "upload"
-  | "declaration";
+  | "declaration"
+  | "conflicting_sources";
 
 export interface ProfileValue {
   value: string;

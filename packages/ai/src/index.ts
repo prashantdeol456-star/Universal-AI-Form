@@ -8,3 +8,4 @@ export * from "./learning";
 export * from "./training";
 export * from "./compose";
 export * from "./router";
+export * from "./knowledge/evidence";

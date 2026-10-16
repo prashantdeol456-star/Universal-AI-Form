@@ -38,7 +38,34 @@ const REASON: Record<string, string> = {
   suspicious: "This label tries to instruct AI assistants, fill it yourself",
   upload: "Upload — use “Upload fields on this page” above",
   declaration: "Declaration, tick it yourself after reading",
+  conflicting_sources: "Your profile and documents disagree, please check",
 };
+
+/** One line about the user's own source for this value (knowledge base). */
+export function EvidenceNote({ m, onUse }: { m: FieldMappingView; onUse?: (value: string, documentTitle: string) => void }) {
+  const ev = m.evidence;
+  if (!ev) return null;
+  if (ev.status === "conflicting") {
+    return <div className="warn small">Different values in your profile and documents. Choose the right one in Dashboard → Documents (conflicts); it is not filled automatically.</div>;
+  }
+  if (ev.status === "unconfirmed_document" && ev.suggestion) {
+    const masked = ev.suggestion.value.includes("•");
+    return (
+      <div className="small muted">
+        Found in “{ev.suggestion.documentTitle}”: <b>{ev.suggestion.value}</b> (not confirmed).{" "}
+        {!masked && onUse && (
+          <button className="link small" onClick={() => onUse(ev.suggestion!.value, ev.suggestion!.documentTitle)}>
+            Use it for this form
+          </button>
+        )}
+      </div>
+    );
+  }
+  if ((ev.status === "verified" || ev.status === "unverified") && ev.document) {
+    return <div className="small muted">From your document “{ev.document.title}”{ev.status === "verified" ? ", confirmed by you" : ""}.</div>;
+  }
+  return null;
+}
 
 export type FeedbackFn = (f: NormalizedField, suggested: string | null, correct: string) => Promise<void>;
 
@@ -209,6 +236,7 @@ function FieldRow({
           {!f.visible && <span className="tag">not shown yet</span>}
         </span>
       </button>
+      {m && <EvidenceNote m={m} onUse={showFill ? (value, title) => onChoice({ ...choice, include: true, manualValue: value, fromDocument: title }) : undefined} />}
       {showFill && <FillControl field={f} m={m} choice={choice} onChange={onChoice} />}
       {canFeedback && !changing && (
         <div className="fb">

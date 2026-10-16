@@ -21,6 +21,20 @@ export interface DocumentSummary {
   confirmedCount: number;
   createdAt: string;
   processedAt: string | null;
+  /** Knowledge base (Phase 3): simple lifecycle shown to the user. */
+  lifecycle: "uploaded" | "processing" | "ready" | "failed";
+  /** The user allowed cloud AI (Gemini) to read excerpts of this document. Off by default. */
+  cloudAiAllowed: boolean;
+  pageCount: number | null;
+  /** Searchable parts of the document. */
+  chunkCount: number;
+  /** Only the first part of a very long document was read. */
+  textTruncated: boolean;
+}
+
+/** Simple lifecycle for the knowledge base (deleted documents are never listed). */
+export function lifecycleOf(status: DocumentStatus): DocumentSummary["lifecycle"] {
+  return status === "UPLOADED" ? "uploaded" : status === "PROCESSING" ? "processing" : status === "FAILED" ? "failed" : "ready";
 }
 
 export interface ExtractionView {

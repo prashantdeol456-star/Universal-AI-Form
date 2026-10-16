@@ -99,6 +99,16 @@ export interface FieldMappingView {
   candidates: Array<{ fieldKey: string; label: string; confidence: number }>;
   /** The user answered this exact question before. */
   savedAnswer: string | null;
+  /** Where the value comes from in the user's own records (knowledge base). Absent in café mode. */
+  evidence?: FieldEvidence | null;
+}
+
+export interface FieldEvidence {
+  status: "verified" | "unverified" | "conflicting" | "unconfirmed_document" | "missing";
+  origin: string | null;
+  document: { id: string; title: string } | null;
+  /** Found in a document, not confirmed yet (masked with • when sensitive). */
+  suggestion: { value: string; documentId: string; documentTitle: string } | null;
 }
 
 export interface MapResult {

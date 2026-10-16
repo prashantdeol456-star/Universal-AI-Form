@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { answerSystemPrompt, composeSystemPrompt, composeUserPrompt, sanitizeAnswer, sanitizeDraft, type AnswerDraft, type AnswerInput, type ComposeEmailInput, type EmailDraft } from "../compose";
+import { EVIDENCE_JSON_SCHEMA, evidenceSystemPrompt, evidenceUserPrompt, type EvidenceAnswerInput } from "../knowledge/evidence";
 import type { AIProvider, FieldSuggestion, MapFieldsInput, MapFieldsResult, TokenUsage } from "./types";
 
 /**
@@ -114,6 +115,20 @@ export class GeminiProvider implements AIProvider {
    * Writes an answer to an open form question from the user's professional facts.
    * The caller sends facts only with the user's consent (never IDs or contact details).
    */
+  /**
+   * Answers from excerpts of the user's documents (knowledge base). The caller sends only
+   * excerpts of documents the user allowed for cloud AI; the raw reply is validated by
+   * validateEvidenceReply against those excerpts.
+   */
+  async answerFromEvidence(input: EvidenceAnswerInput): Promise<{ raw: string; usage: TokenUsage }> {
+    const { text, usage } = await this.generate({
+      systemInstruction: { parts: [{ text: evidenceSystemPrompt(input) }] },
+      contents: [{ role: "user", parts: [{ text: evidenceUserPrompt(input) }] }],
+      generationConfig: { temperature: 0.1, responseMimeType: "application/json", responseJsonSchema: EVIDENCE_JSON_SCHEMA },
+    });
+    return { raw: text, usage };
+  }
+
   async answerQuestion(input: AnswerInput): Promise<{ draft: AnswerDraft; usage: TokenUsage }> {
     const { text, usage } = await this.generate({
       systemInstruction: { parts: [{ text: answerSystemPrompt(input) }] },
