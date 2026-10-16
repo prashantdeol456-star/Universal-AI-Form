@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { answerSystemPrompt, composeSystemPrompt, composeUserPrompt, sanitizeAnswer, sanitizeDraft, type AnswerDraft, type AnswerInput, type ComposeEmailInput, type EmailDraft } from "../compose";
+import { JOB_ANALYSIS_SCHEMA, jobAnalysisSystemPrompt, jobAnalysisUserPrompt, type JobAnalysisInput } from "../jobs/analysis";
 import { EVIDENCE_JSON_SCHEMA, evidenceSystemPrompt, evidenceUserPrompt, type EvidenceAnswerInput } from "../knowledge/evidence";
 import type { AIProvider, FieldSuggestion, MapFieldsInput, MapFieldsResult, TokenUsage } from "./types";
 
@@ -125,6 +126,16 @@ export class GeminiProvider implements AIProvider {
       systemInstruction: { parts: [{ text: evidenceSystemPrompt(input) }] },
       contents: [{ role: "user", parts: [{ text: evidenceUserPrompt(input) }] }],
       generationConfig: { temperature: 0.1, responseMimeType: "application/json", responseJsonSchema: EVIDENCE_JSON_SCHEMA },
+    });
+    return { raw: text, usage };
+  }
+
+  /** Summarises a public job description (no personal data). Reply validated by validateJobAnalysis. */
+  async analyzeJob(input: JobAnalysisInput): Promise<{ raw: string; usage: TokenUsage }> {
+    const { text, usage } = await this.generate({
+      systemInstruction: { parts: [{ text: jobAnalysisSystemPrompt() }] },
+      contents: [{ role: "user", parts: [{ text: jobAnalysisUserPrompt(input) }] }],
+      generationConfig: { temperature: 0.1, responseMimeType: "application/json", responseJsonSchema: JOB_ANALYSIS_SCHEMA },
     });
     return { raw: text, usage };
   }

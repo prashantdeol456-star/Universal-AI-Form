@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { JOB_ANALYSIS_SCHEMA, jobAnalysisSystemPrompt, jobAnalysisUserPrompt, type JobAnalysisInput } from "../jobs/analysis";
 import { EVIDENCE_JSON_SCHEMA, evidenceSystemPrompt, evidenceUserPrompt, type EvidenceAnswerInput } from "../knowledge/evidence";
 import { localMappingFormat, localMappingSystemPrompt, localMappingUserPrompt } from "./prompt";
 import type { AIProvider, FieldSuggestion, MapFieldsInput, MapFieldsResult } from "./types";
@@ -88,6 +89,21 @@ export class LocalAIProvider implements AIProvider {
       messages: [
         { role: "system", content: evidenceSystemPrompt(input) },
         { role: "user", content: evidenceUserPrompt(input) },
+      ],
+    })) as { message?: { content?: string } };
+    return { raw: body.message?.content ?? "" };
+  }
+
+  /** Job description summary on the self-hosted model. Reply validated by the caller. */
+  async analyzeJob(input: JobAnalysisInput): Promise<{ raw: string }> {
+    const body = (await this.post("/api/chat", {
+      model: this.model,
+      stream: false,
+      options: { temperature: 0.1 },
+      format: JOB_ANALYSIS_SCHEMA,
+      messages: [
+        { role: "system", content: jobAnalysisSystemPrompt() },
+        { role: "user", content: jobAnalysisUserPrompt(input) },
       ],
     })) as { message?: { content?: string } };
     return { raw: body.message?.content ?? "" };

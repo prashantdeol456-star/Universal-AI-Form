@@ -9,3 +9,4 @@ export * from "./training";
 export * from "./compose";
 export * from "./router";
 export * from "./knowledge/evidence";
+export * from "./jobs/analysis";
