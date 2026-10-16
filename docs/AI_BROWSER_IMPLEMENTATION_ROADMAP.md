@@ -11,7 +11,8 @@ test && npm run test:db && npm run build:extension && npm run build` green befor
 | 0 — Groundwork | **Done**, except the first VPS deploy (needs the owner's server access and secrets) |
 | 1 — Persistent tasks | **Done** (15 October 2026) — see "Phase 1 — implemented" below; browser-step execution is deliberately left for Phase 2 |
 | 2 — Safer browser actions | **Done** (15 October 2026) — see "Phase 2 — implemented" below. D-15 (focus-only comboboxes) still open |
-| 3–6 | Not started |
+| 3 — Knowledge base | **Done** (16 October 2026) — see "Phase 3 — implemented" below |
+| 4–6 | Not started |
 | 7 — WhatsApp | Design only (`AI_BROWSER_WHATSAPP_DESIGN.md`) |
 
 ## Phase 0 — Groundwork (no new features)
@@ -175,6 +176,31 @@ is deferred (Phase 3).
 | Claim checker | Rejects or flags draft sentences with facts not found in profile/answers/chunks |
 | Acceptance | "Describe your AI experience" is answered from the CV text with citations to the chunks; no claim outside them in the test set |
 | Rollback | Drafting falls back to profile-only facts |
+
+### Phase 3 — implemented
+
+Changed from the plan: no embeddings for personal chunks (D-34); the "claim checker" is quote validation (D-36).
+
+| Part | Where | What it does |
+|---|---|---|
+| Formats | `packages/document-engine/src/fileType.ts`, `docx.ts`, `ocr.ts` | **Confirmed by tests**: PDF with a text layer (one text per page), DOCX (own bounded ZIP reader, `word/document.xml` only; headings + table rows kept), TXT (UTF-8 only, named `.txt`), JPG/PNG/WEBP via the existing Tesseract OCR. Refused: macro-enabled Word, damaged/oversized/bomb-like archives, binary renamed `.txt`, extension that disagrees with the content, empty files. Scanned PDFs are still not OCR'd. XLSX/CSV not supported |
+| Limits | `ocr.ts` `TEXT_LIMITS`, `knowledge.ts` `CHUNK_LIMITS`, `docx.ts` `DOCX_LIMITS` | 300 PDF pages, 1.5 M characters, 600 chunks per document; `text_truncated` shown to the user |
+| Migration | `0018_knowledge_base.sql` | `documents.cloud_ai_allowed` (default false, owner-updatable), `page_count`, `chunk_count`, `text_truncated`; table `document_chunks` (encrypted `content_encrypted` / `section_encrypted`, `page_number`, `char_count`, `token_count`, `index_key_id`, `terms`); forced RLS, select-only for the app role, owner trigger; trigger that purges chunks, extracted text and unconfirmed extractions when a document is deleted |
+| Pipeline | `apps/web/src/server/documents/worker.ts` | Existing queue (SKIP LOCKED, stale reclaim, 3 attempts). Text → fields (as before) → chunks with page and section, all in one transaction (a re-run replaces, never duplicates). Photos, signatures, Aadhaar, PAN and category certificates are never indexed (D-35) |
+| Search index | `apps/web/src/server/knowledge/searchIndex.ts` | Blind keyword index: HMAC-SHA256 of each normalised word with a key derived from `DATA_ENCRYPTION_KEYS` and the user id (D-33). Queries hash under every key in the keyring (rotation-safe) |
+| Retrieval | `apps/web/src/server/knowledge/retrieval.ts` `retrieve(actor, query, opts)` | RLS + user filter → ≤ 60 candidates by hash overlap → decrypt candidates only → BM25-style ranking → ≤ 8 excerpts (≤ 600 chars) with document, page, section; plus profile values (confirmed or not) and unconfirmed document values for fields the query names; conflicts reported; `not_found` when nothing matches. Query ≤ 300 chars |
+| Answers | `knowledge/answer.ts`, `packages/ai/src/knowledge/evidence.ts`, purpose `extract_facts` | Evidence first; conflict → no model; local model may read all excerpts; cloud only with cloud AI on **and** per-document consent (profile values only with profile sharing); local failure never falls back to cloud. Model must cite `S1…` and quote exactly; unsupported statements are dropped; invalid JSON/provider error → excerpts only. Never marks anything verified |
+| Verified facts | existing `document_extractions` → confirm → `profile_fields.verified` | Not duplicated: extracted values stay `PENDING` until the user confirms; conflicts use the existing resolver |
+| Form filling | `mapping/service.ts`, extension `FormSummary.tsx`, `Fill.tsx` | Each mapped field carries `evidence`: verified / unverified / conflicting / unconfirmed_document / missing, the source document, and an unconfirmed suggestion. Conflicts are never auto-filled (`USER_REVIEW`, `conflicting_sources`). A document suggestion is used only when the user clicks "Use it for this form". Café mode shows no document evidence |
+| UI | `/dashboard/knowledge`, document page "Search and AI" card, documents list | Search, "Answer with sources", "Draft a form answer", source links, fact verification badges, conflicts, per-document cloud AI switch |
+| API | `GET /api/knowledge/search`, `POST /api/knowledge/answer`, `PATCH /api/documents/:id` | `requireUser` first, rate limited (60/min, 20/min), `no-store` |
+
+**Known limitations / deferred**
+
+- Keyword search only (no synonyms beyond simple stemming; English stemming only). The blind index reveals to the database which chunks of one user share a word.
+- Scanned PDFs need an image upload; OCR quality as before.
+- The extension side panel's evidence notes are covered by unit tests; they were not checked in the browser pane.
+- Existing documents are indexed when processed again ("Read again").
 
 ## Phase 4 — Job discovery and matching
 

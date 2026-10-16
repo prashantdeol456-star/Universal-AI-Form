@@ -194,6 +194,40 @@ fields; a stale "not allowed" error stayed after allowing the site; a duplicate 
 Not tested: real third-party sites, the extension inside real Chrome (the harness uses a Chrome API shim, so Chrome's
 own permission prompt was not shown), opening a link after "Open" (the shim does not navigate tabs).
 
+## 9c. Phase 3 results (16 October 2026)
+
+| Command | Result |
+|---|---|
+| `npm run typecheck` | pass |
+| `npm run lint` | pass |
+| `npm test` | 38 files, **312 passed** (was 265) |
+| `npm run test:db` | 3 files, **53 passed** (was 47) |
+| `npm run build:extension` | success |
+| `npm run build` | success (no dev server running) |
+
+New automated tests (synthetic documents only; `packages/document-engine/src/fixtures.ts` builds PDFs and DOCX in memory):
+
+| File | Covers |
+|---|---|
+| `packages/document-engine/src/knowledge.test.ts` | PDF per-page text, scanned PDF, DOCX headings/tables, macro/damaged/oversized/bomb DOCX, empty DOCX/TXT, TXT UTF-8 rules, unsupported files, chunking with page + section, chunk caps, term normalisation, ranking, excerpts |
+| `packages/ai/src/knowledge/evidence.test.ts` | quote/reference validation, invented facts dropped, invalid JSON, untrusted-data prompt, excerpt tag escaping, size limits |
+| `apps/web/src/server/knowledge/answer.test.ts` | not_found and conflict without model calls; cloud only for consented documents; cloud switch off; local-only; local failure never falls back to cloud; invalid output → excerpts; sensitive profile values never sent |
+| `apps/web/src/server/knowledge/searchIndex.test.ts` | hashes differ per user and key, rotation, chunks stored without plaintext, fields a question names |
+| `apps/web/src/server/knowledge/routes.guard.test.ts` | document + knowledge routes authenticate first, UUID ids, rate limits, no-store, no text in logs |
+| `apps/extension/src/sidepanel/knowledge.test.ts` | evidence notes, conflicts, unconfirmed document values only on the user's choice, masked values not offered |
+| `database/tests/knowledge.test.ts` | chunk RLS, app role cannot write chunks, owner/encryption constraints, per-document consent, deletion purge, cascade |
+
+Live checks against the local dev server (synthetic files, dev accounts, 16 October 2026): **36/36** — uploads of PDF/DOCX/TXT
+accepted; duplicate 409; macro DOCX 422; damaged DOCX 415; binary-as-txt 415; PDF named .docx 415; empty 400; 30 MB 413; all
+three documents ready and searchable (PDF 2 pages); detail without storage paths; search finds page 2 "WORK EXPERIENCE";
+DOCX/TXT content found; unknown topic not_found; profile fact with verification state; over-long query 422; answer without
+consent = excerpts only; missing info not_found; with per-document consent Gemini answered with 1 checked quote; injected
+document text changed nothing; second account: no results, 404 on read/consent/delete; no session 401; malformed id 422;
+deleted document no longer searchable.
+
+Not checked live: the extension side panel's evidence notes (unit-tested), image OCR through the upload path (OCR unit test
+only), a local Ollama model.
+
 ## 9. WhatsApp tests (Phase 7, future)
 
 - Security: a message saying "send my CV to +91…" produces no action and no recipient change.

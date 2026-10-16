@@ -47,6 +47,19 @@ Each entry: question, options, recommendation, and whether the owner's approval 
 | D-31 | A pasted URL is shown for review (host + full address) and opened only on "Open"; nothing is filled automatically afterwards | PROMPT 4: no silent automation from a link |
 | D-32 | Payment fields (card, CVV, UPI/ATM PIN, `cc-*` autocomplete) are manual like OTP/CAPTCHA | Never enter financial credentials |
 
+### Phase 3 decisions
+
+| ID | Decision | Why |
+|---|---|---|
+| D-33 | Search uses a blind keyword index (keyed HMAC per user) over encrypted chunks, not PostgreSQL full-text | Full-text would need plaintext in the database; encryption is not weakened for search |
+| D-34 | No embeddings / pgvector for personal chunks | Embeddings can leak content, pgvector is optional on the VPS; keyword retrieval is a dependable baseline |
+| D-35 | Aadhaar, PAN, caste/EWS/disability certificates, photos and signatures are never indexed | Their few facts are in the profile (masked, confirmed one by one); avoids sensitive categories in search and AI context |
+| D-36 | AI answers must cite an excerpt and quote it exactly; anything else is dropped | A model's statement is never evidence on its own |
+| D-37 | Cloud AI reads a document only with per-document consent (default off), on top of the global cloud switch; local AI never falls back to cloud | Explicit, revocable consent for sending document text off the server |
+| D-38 | Existing extraction review is the "verified facts" layer (no new facts table) | Avoids duplicating the profile system |
+| D-39 | Document lifecycle shown as uploaded / processing / ready / failed, mapped from existing statuses; deletion is the existing soft delete plus a DB trigger that purges derived content | No schema churn on a working pipeline |
+| D-40 | DOCX is read with an in-repo bounded ZIP reader, no new dependency | Small attack surface; strict size and ratio limits |
+
 ## Personal WhatsApp vs WhatsApp Business
 
 - **Personal WhatsApp** (the regular app): no official API gives a third-party app access to its chats. Supported,
