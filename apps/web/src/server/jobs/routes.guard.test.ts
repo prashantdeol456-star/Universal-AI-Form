@@ -18,7 +18,7 @@ const files = routeFiles(API);
 
 describe("jobs API route guards", () => {
   it("covers all jobs routes", () => {
-    expect(files.length).toBe(12);
+    expect(files.length).toBe(17);
   });
 
   for (const file of files) {

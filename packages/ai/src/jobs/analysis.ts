@@ -15,6 +15,8 @@ export interface JobAnalysis {
   summary: string;
   responsibilities: Array<{ text: string; quote: string }>;
   requirements: Array<{ text: string; quote: string; kind: "required" | "preferred" }>;
+  /** Practice questions an interviewer might ask, each tied to a quote from the job text. */
+  interviewQuestions: Array<{ question: string; quote: string }>;
   dropped: number;
 }
 
@@ -30,7 +32,8 @@ export function jobAnalysisSystemPrompt(): string {
     "- responsibilities and requirements: each item has a short paraphrase in `text` and an exact quote (3–25 words) copied from the description in `quote`.",
     "- requirements.kind is \"preferred\" only when the description marks it as preferred / nice to have / a plus; otherwise \"required\".",
     `- At most ${JOB_ANALYSIS_LIMITS.items} items per list.`,
-    'Return JSON: {"summary": string, "responsibilities": [{"text": string, "quote": string}], "requirements": [{"text": string, "quote": string, "kind": "required"|"preferred"}]}.',
+    "- interview_questions: up to 6 practice questions an interviewer might ask about this job, each with the exact quote (3–25 words) of the requirement or responsibility it is about. Ask about the job; never assume anything about the candidate.",
+    'Return JSON: {"summary": string, "responsibilities": [{"text": string, "quote": string}], "requirements": [{"text": string, "quote": string, "kind": "required"|"preferred"}], "interview_questions": [{"question": string, "quote": string}]}.',
   ].join("\n");
 }
 
@@ -48,8 +51,9 @@ export const JOB_ANALYSIS_SCHEMA = {
       type: "array",
       items: { type: "object", properties: { text: { type: "string" }, quote: { type: "string" }, kind: { type: "string", enum: ["required", "preferred"] } }, required: ["text", "quote", "kind"] },
     },
+    interview_questions: { type: "array", items: { type: "object", properties: { question: { type: "string" }, quote: { type: "string" } }, required: ["question", "quote"] } },
   },
-  required: ["summary", "responsibilities", "requirements"],
+  required: ["summary", "responsibilities", "requirements", "interview_questions"],
 } as const;
 
 const item = z.object({ text: z.string().max(500), quote: z.string().max(400) });
@@ -57,6 +61,7 @@ const schema = z.object({
   summary: z.string().max(2000),
   responsibilities: z.array(item).max(30),
   requirements: z.array(item.extend({ kind: z.enum(["required", "preferred"]) })).max(30),
+  interview_questions: z.array(z.object({ question: z.string().max(400), quote: z.string().max(400) })).max(20).default([]),
 });
 
 export class JobAnalysisError extends Error {
@@ -98,5 +103,8 @@ export function validateJobAnalysis(raw: unknown, description: string): JobAnaly
   const responsibilities = keep(p.data.responsibilities).map((x) => ({ text: x.text.trim(), quote: x.quote.trim() }));
   const requirements = keep(p.data.requirements).map((x) => ({ text: x.text.trim(), quote: x.quote.trim(), kind: x.kind }));
   const words = p.data.summary.trim().split(/\s+/);
-  return { summary: words.length > 80 ? `${words.slice(0, 80).join(" ")}…` : p.data.summary.trim(), responsibilities, requirements, dropped };
+  const interviewQuestions = keep(p.data.interview_questions.map((q) => ({ text: q.question, quote: q.quote })))
+    .slice(0, 6)
+    .map((x) => ({ question: x.text.trim(), quote: x.quote.trim() }));
+  return { summary: words.length > 80 ? `${words.slice(0, 80).join(" ")}…` : p.data.summary.trim(), responsibilities, requirements, interviewQuestions, dropped };
 }

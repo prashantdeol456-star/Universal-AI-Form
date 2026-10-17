@@ -5,6 +5,7 @@ const TABS = [
   { href: "/dashboard/jobs/tracker", label: "Applications" },
   { href: "/dashboard/jobs/sources", label: "Sources & add a job" },
   { href: "/dashboard/jobs/preferences", label: "Preferences" },
+  { href: "/dashboard/jobs/feedback", label: "Your feedback & rules" },
 ] as const;
 
 export function JobsNav({ active }: { active: (typeof TABS)[number]["href"] }) {

@@ -1,5 +1,5 @@
 import "server-only";
-import { extractRequirements, mentions, matchJob, qualificationLevel, SKILL_LEXICON, type CandidateFacts, type Evidence, type JobPreferenceInput, type JobRequirements, type MatchResult, type WorkArrangement } from "@ufa/jobs";
+import { applyCorrections, extractRequirements, mentions, matchJob, qualificationLevel, rankAdjustment, SKILL_LEXICON, type CorrectionTarget, type RankingRule, type CandidateFacts, type Evidence, type JobPreferenceInput, type JobRequirements, type MatchResult, type WorkArrangement } from "@ufa/jobs";
 import type { TransactionSql } from "@ufa/db";
 import { asUser, decryptValue, type Actor } from "../db";
 import { readStored } from "../documents/conflicts";
@@ -116,21 +116,36 @@ export function requirementsOf(r: JobRowForMatch): JobRequirements {
   };
 }
 
-/** Computes and stores the fit score of the given jobs (all the user's jobs when omitted). */
+/**
+ * Computes and stores the fit score of the given jobs (all the user's jobs when omitted).
+ * The user's requirement corrections for a job are applied first; the user's ranking rules
+ * give a separate ordering adjustment and never change the score.
+ */
 export async function computeMatches(tx: TransactionSql, userId: string, candidate: Candidate, jobIds?: string[]): Promise<Map<string, MatchResult>> {
-  const rows = await tx<JobRowForMatch[]>`
-    select id, title, location, work_arrangement, employment_type, required_skills, preferred_skills, mentioned_skills,
+  const rows = await tx<(JobRowForMatch & { employer: string | null; description: string })[]>`
+    select id, title, employer, description, location, work_arrangement, employment_type, required_skills, preferred_skills, mentioned_skills,
            experience_min_years, experience_text, education_level, education_required, requirements_structured
       from job_listings where user_id = ${userId} ${jobIds ? tx`and id = any(${jobIds}::uuid[])` : tx``}
      limit 2000`;
+  const corrections = await tx<{ job_id: string; target: CorrectionTarget; action: "add" | "remove" | "set"; value: string }[]>`
+    select job_id, target, action, value from job_feedback
+     where user_id = ${userId} and kind = 'requirement_correction' ${jobIds ? tx`and job_id = any(${jobIds}::uuid[])` : tx``}
+     order by created_at`;
+  const rules = await tx<RankingRule[]>`select id, kind, value, weight from job_ranking_rules where user_id = ${userId}`;
   const out = new Map<string, MatchResult>();
   for (const r of rows) {
-    const m = matchJob({ title: r.title, location: r.location, workArrangement: r.work_arrangement, employmentType: r.employment_type, requirements: requirementsOf(r) }, candidate.facts, candidate.prefs);
+    const req = applyCorrections(
+      requirementsOf(r),
+      corrections.filter((c) => c.job_id === r.id),
+    );
+    const m = matchJob({ title: r.title, location: r.location, workArrangement: r.work_arrangement, employmentType: r.employment_type, requirements: req }, candidate.facts, candidate.prefs);
+    const rank = rankAdjustment({ title: r.title, employer: r.employer, description: r.description, requiredSkills: req.requiredSkills, preferredSkills: req.preferredSkills }, rules);
     out.set(r.id, m);
     await tx`
-      insert into job_matches (job_id, user_id, score, provisional, explanation, computed_at)
-      values (${r.id}, ${userId}, ${m.score}, ${m.provisional}, ${tx.json(m as never)}, now())
-      on conflict (job_id) do update set score = excluded.score, provisional = excluded.provisional, explanation = excluded.explanation, computed_at = now()`;
+      insert into job_matches (job_id, user_id, score, provisional, explanation, rank_adjustment, rank_explanation, computed_at)
+      values (${r.id}, ${userId}, ${m.score}, ${m.provisional}, ${tx.json(m as never)}, ${rank.adjustment}, ${tx.json(rank.applied as never)}, now())
+      on conflict (job_id) do update set score = excluded.score, provisional = excluded.provisional, explanation = excluded.explanation,
+        rank_adjustment = excluded.rank_adjustment, rank_explanation = excluded.rank_explanation, computed_at = now()`;
   }
   return out;
 }

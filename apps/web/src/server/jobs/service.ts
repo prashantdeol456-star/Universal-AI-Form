@@ -248,7 +248,7 @@ export interface JobSearch {
   maxExperience?: number;
   /** Discovered (retrieved) on or after this date. */
   since?: string;
-  saved?: "saved" | "unsaved";
+  saved?: "saved" | "unsaved" | "shortlisted";
   minScore?: number;
   maxScore?: number;
   includeClosed?: boolean;
@@ -278,6 +278,7 @@ interface SummaryRow {
   status: JobSummary["status"];
   score: number | null;
   provisional: boolean | null;
+  rank_adjustment: number | null;
   saved: boolean;
   shortlisted: boolean | null;
   priority: number | null;
@@ -309,6 +310,7 @@ function toSummary(r: SummaryRow): JobSummary {
     stale: isStale(r.last_seen_at.toISOString(), Date.now(), JOB_LIMITS.staleAfterDays),
     score: r.score,
     provisional: r.provisional,
+    rankAdjustment: r.rank_adjustment ?? 0,
     saved: r.saved,
     shortlisted: r.shortlisted ?? false,
     priority: r.priority,
@@ -316,7 +318,7 @@ function toSummary(r: SummaryRow): JobSummary {
   };
 }
 
-export async function searchJobs(actor: Actor, s: JobSearch): Promise<{ jobs: JobSummary[]; page: number; pageSize: number; total: number }> {
+export async function searchJobs(actor: Actor, s: JobSearch): Promise<{ jobs: JobSummary[]; page: number; pageSize: number; total: number; failedSources: Array<{ name: string; sourceType: string; status: string; error: string | null }> }> {
   const pageSize = Math.min(Math.max(s.pageSize ?? 20, 1), 50);
   const page = Math.min(Math.max(s.page ?? 1, 1), 200);
   return asUser(actor, async (tx) => {
@@ -331,7 +333,7 @@ export async function searchJobs(actor: Actor, s: JobSearch): Promise<{ jobs: Jo
       s.employmentType ? tx`j.employment_type ilike ${like(s.employmentType)}` : tx`true`,
       s.maxExperience !== undefined ? tx`(j.experience_min_years is null or j.experience_min_years <= ${s.maxExperience})` : tx`true`,
       s.since ? tx`j.retrieved_at >= ${s.since}::date` : tx`true`,
-      s.saved === "saved" ? tx`sv.job_id is not null` : s.saved === "unsaved" ? tx`sv.job_id is null` : tx`true`,
+      s.saved === "saved" ? tx`sv.job_id is not null` : s.saved === "unsaved" ? tx`sv.job_id is null` : s.saved === "shortlisted" ? tx`sv.shortlisted` : tx`true`,
       s.minScore !== undefined ? tx`m.score >= ${s.minScore}` : tx`true`,
       s.maxScore !== undefined ? tx`m.score <= ${s.maxScore}` : tx`true`,
     ];
@@ -341,14 +343,25 @@ export async function searchJobs(actor: Actor, s: JobSearch): Promise<{ jobs: Jo
       left join job_saves sv on sv.job_id = j.id
       left join job_applications a on a.job_id = j.id`;
     const [count] = await tx<{ n: number }[]>`select count(*)::int as n ${from} where ${cond}`;
-    const order = s.sort === "recent" ? tx`j.retrieved_at desc, j.id` : tx`m.score desc nulls last, j.retrieved_at desc, j.id`;
+    // "Best fit": the fit score plus the user's own ranking-rule adjustment (shown on each job).
+    const order = s.sort === "recent" ? tx`j.retrieved_at desc, j.id` : tx`(m.score + m.rank_adjustment) desc nulls last, m.score desc nulls last, j.retrieved_at desc, j.id`;
     const rows = await tx<SummaryRow[]>`
       select j.id, j.source_type, j.title, j.employer, j.location, j.work_arrangement, j.employment_type, j.experience_min_years,
              j.salary_min, j.salary_max, j.salary_currency, j.salary_period, j.salary_source, j.canonical_url, j.published_at,
-             j.retrieved_at, j.last_seen_at, j.status, m.score, m.provisional, (sv.job_id is not null) as saved, sv.shortlisted, sv.priority,
+             j.retrieved_at, j.last_seen_at, j.status, m.score, m.provisional, m.rank_adjustment, (sv.job_id is not null) as saved, sv.shortlisted, sv.priority,
              a.status as application_status
         ${from} where ${cond} order by ${order} limit ${pageSize} offset ${(page - 1) * pageSize}`;
-    return { jobs: rows.map(toSummary), page, pageSize, total: count!.n };
+    // Partial results: boards whose last read failed are named, so missing jobs are explained.
+    const failed = await tx<{ source_type: string; source_key: string; display_name: string | null; last_status: string; last_error: string | null }[]>`
+      select source_type, source_key, display_name, last_status, last_error from job_sources
+       where user_id = ${actor.id} and last_status in ('error', 'rate_limited', 'not_found')`;
+    return {
+      jobs: rows.map(toSummary),
+      page,
+      pageSize,
+      total: count!.n,
+      failedSources: failed.map((f) => ({ name: f.display_name ?? f.source_key, sourceType: f.source_type, status: f.last_status, error: f.last_error })),
+    };
   });
 }
 
@@ -374,8 +387,8 @@ function toApplicationView(a: { id: string; job_id: string | null; title: string
 
 export async function getJob(actor: Actor, id: string): Promise<JobDetail> {
   return asUser(actor, async (tx) => {
-    const [j] = await tx<(SummaryRow & { description: string; apply_url: string | null; required_skills: string[]; preferred_skills: string[]; mentioned_skills: string[]; experience_text: string | null; education_level: string | null; education_required: boolean | null; source_metadata: Record<string, string | null>; ai_analysis: JobAnalysisView | null; explanation: MatchResult | null; computed_at: Date | null; notes: string | null })[]>`
-      select j.*, m.score, m.provisional, m.explanation, m.computed_at, (sv.job_id is not null) as saved, sv.shortlisted, sv.priority, sv.notes,
+    const [j] = await tx<(SummaryRow & { description: string; apply_url: string | null; required_skills: string[]; preferred_skills: string[]; mentioned_skills: string[]; experience_text: string | null; education_level: string | null; education_required: boolean | null; source_metadata: Record<string, string | null>; ai_analysis: JobAnalysisView | null; explanation: MatchResult | null; computed_at: Date | null; rank_explanation: JobDetail["rankExplanation"] | null; notes: string | null })[]>`
+      select j.*, m.score, m.provisional, m.explanation, m.computed_at, m.rank_adjustment, m.rank_explanation, (sv.job_id is not null) as saved, sv.shortlisted, sv.priority, sv.notes,
              a.status as application_status
         from job_listings j left join job_matches m on m.job_id = j.id left join job_saves sv on sv.job_id = j.id left join job_applications a on a.job_id = j.id
        where j.id = ${id} and j.user_id = ${actor.id}`;
@@ -406,6 +419,7 @@ export async function getJob(actor: Actor, id: string): Promise<JobDetail> {
       education: j.education_level ? { level: j.education_level, required: j.education_required } : null,
       metadata: j.source_metadata,
       match: j.explanation,
+      rankExplanation: j.rank_explanation ?? [],
       matchComputedAt: j.computed_at?.toISOString() ?? null,
       notes: j.notes,
       analysis: j.ai_analysis,

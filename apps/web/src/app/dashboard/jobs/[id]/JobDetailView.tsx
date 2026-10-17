@@ -9,6 +9,7 @@ import { api } from "@/lib/api-client";
 import type { JobAnalysisView, JobDetail } from "@/server/jobs/types";
 import type { KnowledgeAnswer } from "@/server/knowledge/types";
 import { money, scoreTone } from "../JobsNav";
+import { FeedbackCard } from "./FeedbackCard";
 
 const EVIDENCE_TEXT = { verified: "confirmed", document: "in your document", unconfirmed: "not confirmed", missing: "not found" } as const;
 const EVIDENCE_TONE = { verified: "green", document: "blue", unconfirmed: "amber", missing: "red" } as const;
@@ -129,6 +130,19 @@ function AnalysisCard({ jobId, initial }: { jobId: string; initial: JobAnalysisV
                   </li>
                 ))}
               </ul>
+            </div>
+          )}
+          {(a.interviewQuestions ?? []).length > 0 && (
+            <div>
+              <div className="text-xs font-semibold">Interview practice questions</div>
+              <ul className="list-disc pl-4">
+                {a.interviewQuestions.map((x, i) => (
+                  <li key={i}>
+                    {x.question} <span className="text-xs text-gray-500">(about: “{x.quote}”)</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="text-xs text-gray-500">Prepare answers from what you have really done; use “Prepare an answer” on the right to find it in your documents.</p>
             </div>
           )}
           {a.dropped > 0 && <p className="text-xs text-gray-500">{a.dropped} point(s) without a matching quote were removed.</p>}
@@ -369,6 +383,7 @@ export function JobDetailView({ job, today }: { job: JobDetail; today: string })
       <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <div className="space-y-6">
           <MatchCard job={job} />
+          <FeedbackCard job={job} />
           <AnalysisCard jobId={job.id} initial={job.analysis} />
           <Card title="Job description (from the source)">
             {job.experienceText && <p className="mb-2 text-xs text-gray-600">Experience requirement read: “{job.experienceText}”</p>}

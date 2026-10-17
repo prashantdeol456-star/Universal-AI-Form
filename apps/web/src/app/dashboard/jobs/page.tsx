@@ -50,6 +50,7 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
             <option value="">Saved and unsaved</option>
             <option value="saved">Saved only</option>
             <option value="unsaved">Not saved</option>
+            <option value="shortlisted">Shortlisted only</option>
           </select>
           <div className="flex gap-1">
             <input name="minScore" type="number" min={0} max={100} defaultValue={raw.minScore} placeholder="Score from" className={input} aria-label="Minimum score" />
@@ -73,6 +74,12 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
         </form>
       </Card>
 
+      {result.failedSources.length > 0 && (
+        <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          Partial results: {result.failedSources.map((f) => `${f.name} (${f.status === "rate_limited" ? "asked us to slow down" : f.status === "not_found" ? "board not found" : "could not be read"})`).join(", ")}.
+          Jobs from these boards may be missing or out of date. <Link href="/dashboard/jobs/sources" className="underline">Check sources</Link>
+        </p>
+      )}
       {result.total === 0 ? (
         <EmptyState
           title={Object.keys(raw).length ? "No jobs match these filters" : "No jobs yet"}
@@ -94,6 +101,8 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
                     {j.status === "closed" && <Badge tone="red">Closed at source</Badge>}
                     {j.stale && j.status !== "closed" && <Badge tone="amber">Not re-checked recently</Badge>}
                     {j.applicationStatus && <Badge tone="blue">{APPLICATION_STATUS_LABELS[j.applicationStatus]}</Badge>}
+                    {j.rankAdjustment !== 0 && <Badge tone="gray">{j.rankAdjustment > 0 ? "+" : ""}{j.rankAdjustment} from your ranking rules</Badge>}
+                    {j.shortlisted && <Badge tone="green">Shortlisted</Badge>}
                   </div>
                   <div className="mt-0.5 text-xs text-gray-500">
                     {j.employer ?? "Employer not given"} · {j.location ?? "Location not given"}

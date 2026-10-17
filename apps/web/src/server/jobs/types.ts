@@ -35,6 +35,8 @@ export interface JobSummary {
   stale: boolean;
   score: number | null;
   provisional: boolean | null;
+  /** From the user's own ranking rules: changes the order only, never the score. */
+  rankAdjustment: number;
   saved: boolean;
   shortlisted: boolean;
   priority: number | null;
@@ -46,6 +48,7 @@ export interface JobAnalysisView {
   summary: string;
   responsibilities: Array<{ text: string; quote: string }>;
   requirements: Array<{ text: string; quote: string; kind: "required" | "preferred" }>;
+  interviewQuestions: Array<{ question: string; quote: string }>;
   dropped: number;
   analyzedAt: string;
 }
@@ -76,6 +79,7 @@ export interface JobDetail extends JobSummary {
   education: { level: string; required: boolean | null } | null;
   metadata: Record<string, string | null>;
   match: MatchResult | null;
+  rankExplanation: Array<{ ruleId: string; kind: string; value: string; weight: number }>;
   matchComputedAt: string | null;
   notes: string | null;
   analysis: JobAnalysisView | null;

@@ -1,4 +1,4 @@
-import { APPLICATION_STATUSES, WORK_ARRANGEMENTS } from "@ufa/jobs";
+import { APPLICATION_STATUSES, CORRECTION_TARGETS, RULE_KINDS, WORK_ARRANGEMENTS } from "@ufa/jobs";
 import { z } from "zod";
 
 /** Request validation for the jobs API (all bounded; unknown keys refused). */
@@ -15,7 +15,7 @@ export const searchSchema = z.object({
   employmentType: text(60).optional(),
   maxExperience: z.coerce.number().min(0).max(60).optional(),
   since: date.optional(),
-  saved: z.enum(["saved", "unsaved"]).optional(),
+  saved: z.enum(["saved", "unsaved", "shortlisted"]).optional(),
   minScore: z.coerce.number().int().min(0).max(100).optional(),
   maxScore: z.coerce.number().int().min(0).max(100).optional(),
   includeClosed: z.enum(["true", "false"]).transform((v) => v === "true").optional(),
@@ -72,3 +72,26 @@ export const preferencesSchema = z
   .refine((p) => p.salaryMin === null || p.salaryMax === null || p.salaryMin <= p.salaryMax, "Minimum salary is above the maximum");
 
 export const answerSchema = z.object({ question: z.string().trim().min(3).max(300) }).strict();
+
+export const feedbackSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("match_useful"), useful: z.boolean(), reason: text(500).nullish() }).strict(),
+  z
+    .object({
+      kind: z.literal("requirement_correction"),
+      target: z.enum(CORRECTION_TARGETS),
+      action: z.enum(["add", "remove", "set"]),
+      value: z.string().trim().min(1).max(100),
+      reason: text(500).nullish(),
+    })
+    .strict(),
+]);
+
+export const ruleSchema = z
+  .object({
+    kind: z.enum(RULE_KINDS),
+    value: z.string().trim().min(1).max(100),
+    weight: z.number().int().min(-10).max(10).refine((n) => n !== 0, "Weight cannot be 0"),
+    reason: text(500).nullish(),
+    sourceFeedbackId: z.uuid().nullish(),
+  })
+  .strict();

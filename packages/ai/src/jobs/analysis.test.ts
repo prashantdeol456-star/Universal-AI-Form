@@ -35,6 +35,25 @@ describe("AI job analysis", () => {
     expect(v.dropped).toBe(2);
   });
 
+  it("keeps interview questions only when they are tied to a quote from the job", () => {
+    const v = validateJobAnalysis(
+      {
+        summary: "PM role.",
+        responsibilities: [],
+        requirements: [],
+        interview_questions: [
+          { question: "How have you tracked automation projects end to end?", quote: "Plan and track warehouse automation projects end to end" },
+          { question: "Tell us about your PhD.", quote: "PhD in robotics required" },
+        ],
+      },
+      description,
+    );
+    expect(v.interviewQuestions).toEqual([{ question: "How have you tracked automation projects end to end?", quote: "Plan and track warehouse automation projects end to end" }]);
+    expect(v.dropped).toBe(1);
+    // Older replies without the list still validate.
+    expect(validateJobAnalysis({ summary: "x", responsibilities: [], requirements: [] }, description).interviewQuestions).toEqual([]);
+  });
+
   it("rejects non-JSON or wrongly shaped replies", () => {
     expect(() => validateJobAnalysis("Great job! Apply now.", description)).toThrow(JobAnalysisError);
     expect(() => validateJobAnalysis({ summary: "x" }, description)).toThrow(JobAnalysisError);

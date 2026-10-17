@@ -6,3 +6,4 @@ export * from "./adapters";
 export * from "./requirements";
 export * from "./match";
 export * from "./tracker";
+export * from "./feedback";

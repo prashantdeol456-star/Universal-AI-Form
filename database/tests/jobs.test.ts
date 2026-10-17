@@ -98,6 +98,37 @@ run("jobs (0019)", () => {
     expect(await as("j_bob", (tx) => tx`select id from job_application_events`)).toHaveLength(0);
   });
 
+  it("feedback (0020): owner-only, well-formed, reviewable and deletable but not rewritable", async () => {
+    const [fb] = await as("j_alice", (tx) => tx<{ id: string }[]>`
+      insert into job_feedback (user_id, job_id, kind, target, action, value, reason)
+      values (${ids.j_alice!}, ${aliceJob}, 'requirement_correction', 'required_skill', 'remove', 'Jira', 'not really needed') returning id`);
+    await as("j_alice", (tx) => tx`insert into job_feedback (user_id, job_id, kind, useful) values (${ids.j_alice!}, ${aliceJob}, 'match_useful', false)`);
+    // Shapes are enforced per kind.
+    await expect(as("j_alice", (tx) => tx`insert into job_feedback (user_id, job_id, kind, useful, value) values (${ids.j_alice!}, ${aliceJob}, 'match_useful', true, 'x')`)).rejects.toThrow(/check constraint/);
+    await expect(as("j_alice", (tx) => tx`insert into job_feedback (user_id, kind, target, action, value) values (${ids.j_alice!}, 'requirement_correction', 'required_skill', 'add', 'x')`)).rejects.toThrow(/check constraint/);
+    // Other users: invisible, cannot attach feedback to Alice's job, cannot delete hers.
+    expect(await as("j_bob", (tx) => tx`select id from job_feedback`)).toHaveLength(0);
+    await expect(as("j_bob", (tx) => tx`insert into job_feedback (user_id, job_id, kind, useful) values (${ids.j_bob!}, ${aliceJob}, 'match_useful', true)`)).rejects.toThrow(/another user/);
+    expect(await as("j_bob", (tx) => tx`delete from job_feedback returning id`)).toHaveLength(0);
+    // Not rewritable, only deletable.
+    await expect(as("j_alice", (tx) => tx`update job_feedback set value = 'SAP' where id = ${fb!.id}`)).rejects.toThrow(/permission denied/);
+
+    // Ranking rules: bounded weights, one per value, own feedback only.
+    await as("j_alice", (tx) => tx`insert into job_ranking_rules (user_id, kind, value, weight, source_feedback_id) values (${ids.j_alice!}, 'employer', 'Acme', -5, ${fb!.id})`);
+    await expect(as("j_alice", (tx) => tx`insert into job_ranking_rules (user_id, kind, value, weight) values (${ids.j_alice!}, 'employer', 'acme', 3)`)).rejects.toThrow(/duplicate key/);
+    for (const w of [0, 11, -11]) {
+      await expect(as("j_alice", (tx) => tx`insert into job_ranking_rules (user_id, kind, value, weight) values (${ids.j_alice!}, 'keyword', ${`k${w}`}, ${w})`), String(w)).rejects.toThrow(/check constraint/);
+    }
+    await expect(as("j_bob", (tx) => tx`insert into job_ranking_rules (user_id, kind, value, weight, source_feedback_id) values (${ids.j_bob!}, 'keyword', 'x', 2, ${fb!.id})`)).rejects.toThrow(/another user/);
+    expect(await as("j_bob", (tx) => tx`select id from job_ranking_rules`)).toHaveLength(0);
+    // The rank adjustment stays within ±20 and apart from the score.
+    await expect(as("j_alice", (tx) => tx`update job_matches set rank_adjustment = 50 where job_id = ${aliceJob}`)).rejects.toThrow(/check constraint/);
+    // Deleting the vote keeps the rule (the link is cleared).
+    expect(await as("j_alice", (tx) => tx`delete from job_feedback where id = ${fb!.id} returning id`)).toHaveLength(1);
+    const [rule] = await as("j_alice", (tx) => tx<{ source_feedback_id: string | null }[]>`select source_feedback_id from job_ranking_rules where value = 'Acme'`);
+    expect(rule!.source_feedback_id).toBeNull();
+  });
+
   it("removing a listing keeps the application as the user's own reference", async () => {
     await as("j_alice", (tx) => tx`delete from job_listings where id = ${aliceJob}`);
     const [app] = await as("j_alice", (tx) => tx<{ job_id: string | null; title: string; status: string }[]>`select job_id, title, status from job_applications where id = ${aliceApp}`);
