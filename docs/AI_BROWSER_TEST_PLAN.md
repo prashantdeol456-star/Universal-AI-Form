@@ -336,6 +336,105 @@ disconnect failed because it tried to delete OAuth states the app role may not d
 
 Not verified: real Google OAuth / Gmail (no client configured), a self-hosted model, the WhatsApp Business Platform.
 
+## 9f. Phase 6 results (17 October 2026)
+
+| Command | Result |
+|---|---|
+| `npm run typecheck` (now includes the companion) | pass |
+| `npm run lint` | pass |
+| `npm test` | 51 files, **496 passed** (was 434) |
+| `npm run test:db` | 6 files, **74 passed** (was 66) |
+| `npm run build:extension` | success |
+| `npm run build:companion` | success (`dist/companion.mjs`, 924 KB) |
+| `npm run build` | success (dev server stopped first) |
+
+New automated tests:
+
+| File | Covers |
+|---|---|
+| `packages/local-agent/src/local-agent.test.ts` | traversal / absolute / NUL paths, secret files and `.git`, junction escaping the folder, home / drive root / temp (AppData) / system folders refused; secret file names; capability policy (default deny, stop, access, unknown step, unimplemented screen/input); command templates (no shell characters, unknown id), env without secrets, output cap; organise classification, no overwrite, plan hash; planner (summary, missing permissions, clarifying questions, summary-length preference), model plans limited to own folders/device/known types |
+| `apps/companion/src/companion.test.ts` | real files under `.data`: listing skips secrets/links; summaries masked, excerpts only when allowed; organise → wrong hash refused → apply → no overwrite → undo; target appearing after planning skipped; edited files left alone by undo; stop between moves; report once, never overwritten, formula-escaped, name must match approval, no traversal; `npm test` without shell and without env secrets; stop kills a running command; unknown template / missing `package.json`; not elevated; local policy refusals; command must match approval |
+| `apps/web/src/server/companion/companion.guard.test.ts` | 21 routes: session or device token first, no client user id, uuid ids, tokens only in pairing poll; generic task API refuses `local_*`; companion source has no shell/exec/listening server/eval, no delete except the no-overwrite move and its own config, never logs token or file text, refuses elevation; strict schemas; feedback suggestions; rule-based review; code normalisation |
+| `database/tests/companion.test.ts` | pairings unreachable by the app role; no capabilities by default, whitelist, cloud needs excerpts consent, owner-only; app role cannot create devices, change tokens or add folders; folders encrypted, known access, same owner, revocable only; revoked stays revoked; `local.` steps allowed, others refused; workflows/preferences/feedback owner-only with key whitelist and encrypted notes; cascade on user deletion |
+
+Live checks with the **real companion program** against the dev server (port 3001, `COMPANION_ENABLED=true`) on real
+folders under `.data/`: **61/61, three consecutive runs**:
+
+- **Pairing**
+  - start without a secret is refused
+  - the code is shown and previewed with the device name, then confirmed
+  - the code is single use
+  - the token is saved and never printed
+  - a direct pairing returns pending, then the token once; a second poll gets 410; a wrong secret gets 404
+- **Default no access**
+  - no capabilities and no AI consent on a new device
+  - other users cannot see or change the device
+  - the screen capability cannot be granted
+- **Folders**
+  - home and AppData are refused
+  - 5 folders are reported with shortened display paths
+  - there is no add-folder API
+- **Planning**
+  - missing permissions are listed and task creation is refused (409)
+  - the generic task API refuses computer tasks
+  - after granting, the plan is complete; an unsupported request gets a question
+- **Summarise**
+  - completed on the computer
+  - `.env` is not read and the Aadhaar number is masked
+  - no excerpts are sent; the AI step is skipped without consent
+- **Organise**
+  - preview first, nothing moved before approval, the approval text says nothing is deleted
+  - applied and verified, with the existing file untouched
+  - undo puts everything back
+- **Report**
+  - a CSV is created in the output folder
+  - a second report with the same name fails and nothing is overwritten
+- **Command**
+  - the approval shows the exact command and folder
+  - `npm test` runs, its output is captured, and the token is not in the child environment
+  - the rule-based review says "passed"
+- **Isolation**
+  - another device cannot claim or report on this device's task
+  - an unknown token gets 401
+- **Emergency stop**
+  - a running command is killed in 4.6–5.1 s and its task paused
+  - no new tasks or claims while the stop is on
+  - clearing the stop does not resume tasks
+  - no orphan process is left
+- **Folder revoke**: revoking on the dashboard removes the folder on the computer.
+- **Workflows**
+  - a workflow is saved as a draft
+  - a draft cannot run; once approved it runs as a normal task
+  - other users cannot run it
+- **Preferences**
+  - feedback only suggests a preference; it is saved after confirmation and used by the planner
+  - unknown keys are refused
+- **Revocation**
+  - a revoked token gets 401
+  - `unpair` revokes the device and forgets the token; the old token stops working
+
+Browser pane:
+
+- Pairing worked through the UI (code → preview → confirm).
+- Capability toggles worked, with screen, window and input disabled.
+- Ask → plan → Run → task page showed the summary.
+- The feedback "remember" flow suggested a preference.
+- The Memory page lists preferences, workflows and feedback.
+- No console errors.
+
+Defects found and fixed during live checks:
+
+- `run --once` exited before the next step was queued; it now waits about 10 s while idle.
+- Checkboxes had no accessible names.
+- The `summary_length` preference was stored but not used; it is now passed to the companion and to the AI prompt.
+
+Not verified:
+
+- macOS and Linux.
+- A self-hosted model or Gemini for the Phase 6 purposes; these paths are unit-tested only.
+- Screen, mouse and keyboard control, which are not implemented.
+- Running against a real HTTPS VPS; only localhost was tested.
+
 ## 9. WhatsApp tests (Phase 7, future)
 
 - Security: a message saying "send my CV to +91…" produces no action and no recipient change.

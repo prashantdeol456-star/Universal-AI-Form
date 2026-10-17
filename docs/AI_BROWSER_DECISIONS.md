@@ -88,6 +88,21 @@ Each entry: question, options, recommendation, and whether the owner's approval 
 | D-57 | No attachments on Gmail drafts in this phase | Keeps the first version reviewable; attaching documents needs its own per-file approval |
 | D-58 | Live verification against a local mock of Google until a real OAuth client is configured; documented as such | No fake claims of a working Google integration |
 
+### Phase 6 decisions
+
+| ID | Decision | Why |
+|---|---|---|
+| D-59 | Companion = outbound-only Node CLI polling the server over HTTPS; no local HTTP server, no native messaging, no Electron | No inbound attack surface (CSRF, DNS rebinding, other local apps); works behind NAT with the VPS; no new runtime to ship |
+| D-60 | Folders are granted only on the computer; the server can view and revoke but never add | A compromised server or account cannot widen local file access |
+| D-61 | New devices have no capabilities; only implemented capabilities can be granted (DB CHECK, schema, policy) | Default deny; no switch for features that do not exist |
+| D-62 | Commands are fixed templates (program + args), no shell, minimal env, timeout, output cap; npm runs through Node's `npm-cli.js` on Windows | No command injection; the device token never reaches child processes |
+| D-63 | Moves never delete or overwrite (hard link + unlink), are logged for undo and verified; reports use exclusive create | Reversible file changes only in this phase |
+| D-64 | Every side effect has its own approval bound by hash (plan SHA, file name, command id); the companion re-checks that the approval matches before acting | What runs is exactly what was shown |
+| D-65 | Emergency stop pauses tasks and blocks claims; clearing it never resumes anything | No unsafe auto-resume |
+| D-66 | Screen, window and input control deferred (declared, disabled, refused) | Not safely testable yet; no covert monitoring |
+| D-67 | Learning = saved workflows (draft until approved), confirmed preferences, stored feedback; never model training; never fewer approvals | Transparent, editable memory; the user stays in control |
+| D-68 | File text leaves the computer only as the summary the user asked for; excerpts to AI only with per-device consent (cloud needs a second consent) | Local files are the most private data the app touches |
+
 ## Personal WhatsApp vs WhatsApp Business
 
 - **Personal WhatsApp** (the regular app): no official API gives a third-party app access to its chats. Supported,

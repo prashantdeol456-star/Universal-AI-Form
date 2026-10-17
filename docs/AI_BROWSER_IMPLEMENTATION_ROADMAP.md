@@ -14,7 +14,7 @@ test && npm run test:db && npm run build:extension && npm run build` green befor
 | 3 — Knowledge base | **Done** (16 October 2026) — see "Phase 3 — implemented" below |
 | 4 — Job discovery and matching | **Done** (16 October 2026) — see "Phase 4 — implemented" below |
 | 5 — Email and WhatsApp | **Done, with Gmail verified only against a local mock of Google** (17 October 2026) — see "Phase 5 — implemented" below |
-| 6 | Not started |
+| 6 — Local companion and continuous learning | **Done, minimum viable companion** (17 October 2026): files, organise/undo, reports, allowlisted commands; screen / mouse / keyboard deferred — see "Phase 6 — implemented" below |
 | 7 — WhatsApp | Design only (`AI_BROWSER_WHATSAPP_DESIGN.md`) |
 
 ## Phase 0 — Groundwork (no new features)
@@ -290,6 +290,38 @@ Changed from the plan: no document attachments on Gmail drafts yet (D-57); no ap
 | Acceptance | Local-only mode completes mapping and drafting with no Gemini calls (verified in `ai_requests`) |
 | Rollback | Uninstall companion; server path unaffected |
 
+### Phase 6 — implemented
+
+Changed from the plan: not a native-messaging host (the plan above) but an **outbound-only command-line companion**
+(`apps/companion`) that polls the user's own server over HTTPS. It opens no local port and needs no browser, so there
+is no CSRF / DNS-rebinding surface, and it works with the self-hosted VPS (D-59). Playwright and a local document
+index are not part of it. Install guide: `docs/companion.md`.
+
+| Part | Where | What it does |
+|---|---|---|
+| Shared policy | `packages/local-agent` (capabilities, paths, commands, organize, plan) | 8 capabilities, 5 implemented (list, read/summarise, create file, move/organise, run allowlisted command); window/screenshot/mouse+keyboard declared but **not implemented** and refused everywhere. `checkLocalStep`: stop flag → known step → implemented → device capability → folder granted with the needed access (read/write/run). Paths: realpath, no absolute / `..` / links leaving the folder; home, drive roots, system/AppData folders, `.ssh`, `.aws`, browser profiles and similar can never be granted; key files, `.env`, password DBs, browser cookie/login files, `.git`, `node_modules` skipped. 7 command templates (fixed program + args). Organise plans: deterministic, no overwrite (" (2)"), bound by SHA-256. Rule-based planner and validation of model plans |
+| Pairing | `server/companion/service.ts`, `/api/companion/pair/{start,poll,confirm}` | Device-code style: the companion sends a self-generated poll secret, shows an 8-character code (10 minutes, single use); the signed-in user previews the device name and confirms; the next poll returns a `ufa_dev_…` token **once** (second poll → 410). Only SHA-256 hashes stored. Start/poll IP rate limited |
+| Device API | `/api/companion/device/{heartbeat,claim,steps/:task/:step/report,revoke}` | Bearer device token; revoked → 401. Heartbeat: companion reports folder display copies (encrypted), receives stop flag, capabilities, AI consent and revoked folder ids. Claim only tasks whose input names this device; server re-checks capability + folder before handing out a step (refused steps fail). Reports carry an encrypted `secret` (file lists, summaries, command output) |
+| Dashboard API | `/api/companion/devices[/:id[/stop|/folders/:f]]`, `/api/companion/stop` | List (online = heartbeat < 90 s), capabilities (implemented only), AI consents, revoke (token ends, tasks cancelled, irreversible), folder revoke (never add), emergency stop per device or all |
+| Tasks | `server/companion/tasks.ts`, `@ufa/tasks` (`local.` steps, `claimExternalStep`) | `local_summarize_files` (list → summarise on the computer → optional AI), `local_organize_files` (plan → approval bound to the plan hash → apply, non-repeatable), `local_create_report` (list → approval with file name → write with `wx`), `local_run_command` (approval with the exact command and folder → run → review), `local_undo_changes`. Created only via `/api/agent/tasks` (device, folders and missing permissions checked); the generic task API refuses them |
+| Companion | `apps/companion` (esbuild → `dist/companion.mjs`) | `pair`, `folders add/list/remove`, `run [--once]`, `status`, `unpair`. Config 0600 in the user profile. Local policy check before every step. Moves: hard link + unlink (fails if the target exists), op log per task for undo, verification afterwards. Reports: CSV/MD, formula-escaped, `wx`. Commands: `spawn` without shell (npm via Node's `npm-cli.js`), minimal env, timeout, 64 KB cap, process-tree kill on stop. Refuses Administrator/root. Heartbeat every 5 s while a step runs |
+| Emergency stop | `stopDevices` | Sets `stop_requested_at`; pauses the device's tasks; the companion aborts the current action at its next heartbeat/progress report (measured 4.6–5.1 s with a running command); no claims while set; clearing it never resumes tasks; audit events |
+| Planning | `/api/agent/plan`, `server/companion/planner.ts` | Purpose `plan_task`: rules first; model only when rules did not understand, then validated (known task type, own device and folders, allowlisted command). Shows steps and missing permissions; nothing runs until Run |
+| Model Router | `packages/ai/src/router.ts` | Implemented: `plan_task`, `summarize_local_document`, `review_task_result`. Reserved (refuse): `classify_file` (rules classify), `understand_screen`, `learn_workflow`. File excerpts leave the computer only with the device's AI consent; cloud additionally needs the device's cloud consent and the global switch; no silent fallback |
+| Memory | `server/companion/memory.ts`, `/api/agent/{workflows,preferences,feedback}`, `/api/tasks/:id/feedback`, `/dashboard/memory` | Workflows saved from completed computer tasks as **drafts**; must be approved before running; running creates a normal task (all checks and approvals again); success/failure counts. Preferences: 4 known keys, saved only when the user confirms (feedback only suggests). Feedback: correct/not, wrong step, encrypted note, one-time vs future. All editable/deletable; nothing trains a model |
+| UI | `/dashboard/companion`, `/dashboard/memory`, task page | Setup steps and status, pairing with preview, device cards (online, stop, revoke, capabilities with disabled "not available yet" items, AI consents, folders), ask → plan → run, recent tasks; task page renders move previews, file lists, summaries, command output, feedback and "Save as workflow" |
+| Migration | `0022_local_companion.sql` | `task_steps` allows `local.`; `companion_pairings` (no app-role access), `companion_devices` (capability whitelist, consents default off, token not changeable, revoked stays revoked), `companion_folders` (encrypted, app role may only revoke), `agent_workflows`, `agent_preferences` (key whitelist), `task_feedback` (encrypted note); forced RLS; same-owner trigger |
+
+**Known limitations / deferred**
+
+- Screen capture, active-window reading and mouse/keyboard control are **not implemented** (disabled in the UI, refused by DB, schemas and policy).
+- Tested on **Windows 11 only** (the development machine). macOS/Linux code paths (config dir, root check, `process.kill(-pid)`) are untested.
+- The companion runs from a repository checkout (uses its `node_modules` for PDF/DOCX reading); there is no installer, auto-start service or auto-update.
+- A self-hosted model and Gemini were not exercised for the new purposes in live checks (dev server has no local model; device AI consent was off) — the AI paths are covered by unit tests only.
+- Images are not read (no OCR on the computer); scanned PDFs are reported as unreadable.
+- The emergency stop reaches a running companion within its 5-second heartbeat, not instantly; an offline companion learns it at its next connection (it gets no work meanwhile).
+- Organise works on the top level of one folder; undo leaves created (empty) sub-folders in place.
+
 ## Phase 7 — WhatsApp Intelligence Agent (future; design only)
 
 Full design: `docs/AI_BROWSER_WHATSAPP_DESIGN.md`. Not implemented; the router purposes `understand_whatsapp` and
@@ -310,6 +342,6 @@ Full design: `docs/AI_BROWSER_WHATSAPP_DESIGN.md`. Not implemented; the router p
 Phase 0 → Phase 1 → Phase 2 → Phase 4 (apply flow)
                  ↘ Phase 3 → Phase 4 (matching quality)
 Phase 1 → Phase 5
-Phase 3 → Phase 6 (local index)
+Phase 1 → Phase 6 (local companion tasks)
 Phase 1 + Phase 3 → Phase 7 (WhatsApp)
 ```
