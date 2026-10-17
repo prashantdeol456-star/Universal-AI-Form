@@ -75,6 +75,19 @@ Each entry: question, options, recommendation, and whether the owner's approval 
 | D-49 | Feedback rows can be deleted but not edited; deleting recomputes scores | A clear history; "undo" is always available |
 | D-50 | Interview practice questions come from the AI summary and must quote the job requirement they are about | Questions about the job, never assumptions about the candidate |
 
+### Phase 5 decisions
+
+| ID | Decision | Why |
+|---|---|---|
+| D-51 | Draft-only: Gmail drafts after approval, WhatsApp drafts copied by the user; no send code at all | Sending on someone's behalf is irreversible; the user keeps that step |
+| D-52 | Scopes `gmail.readonly` + optional `gmail.compose`; no `gmail.modify`, `gmail.send` or full-mail scope | Least privilege; Google has no drafts-only scope, so compose is asked only when drafts in Gmail are wanted |
+| D-53 | Gmail message bodies are fetched on request and never stored; only summaries the user asked for and drafts are kept (encrypted, deletable) | Minimise stored third-party data |
+| D-54 | WhatsApp personal chats via user exports only; Business Platform detected but not used; WhatsApp Web, phone databases and unofficial APIs rejected | WhatsApp has no permitted API for personal chats; matches D-13 |
+| D-55 | Cloud AI for messages needs both the global switch and per-mailbox / per-chat consent (default off); local first, never silent fallback | Messages contain other people's data |
+| D-56 | Recipients come from thread headers only; approval freezes the exact text by hash; creation is a separate non-repeatable step with a recorded draft id | Prevents changed recipients, changed text after approval, and duplicate drafts |
+| D-57 | No attachments on Gmail drafts in this phase | Keeps the first version reviewable; attaching documents needs its own per-file approval |
+| D-58 | Live verification against a local mock of Google until a real OAuth client is configured; documented as such | No fake claims of a working Google integration |
+
 ## Personal WhatsApp vs WhatsApp Business
 
 - **Personal WhatsApp** (the regular app): no official API gives a third-party app access to its chats. Supported,

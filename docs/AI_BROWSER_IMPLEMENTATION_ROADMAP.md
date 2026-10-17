@@ -13,7 +13,8 @@ test && npm run test:db && npm run build:extension && npm run build` green befor
 | 2 — Safer browser actions | **Done** (15 October 2026) — see "Phase 2 — implemented" below. D-15 (focus-only comboboxes) still open |
 | 3 — Knowledge base | **Done** (16 October 2026) — see "Phase 3 — implemented" below |
 | 4 — Job discovery and matching | **Done** (16 October 2026) — see "Phase 4 — implemented" below |
-| 5–6 | Not started |
+| 5 — Email and WhatsApp | **Done, with Gmail verified only against a local mock of Google** (17 October 2026) — see "Phase 5 — implemented" below |
+| 6 | Not started |
 | 7 — WhatsApp | Design only (`AI_BROWSER_WHATSAPP_DESIGN.md`) |
 
 ## Phase 0 — Groundwork (no new features)
@@ -255,6 +256,30 @@ adds nothing to other screens), no Gmail job alerts (Phase 5), no link to Phase 
 | Sending | Default: user presses Send in Gmail. Optional policy: approve-to-send recorded in `approvals` |
 | Acceptance | Recruiter email with CV attached appears once in Gmail Drafts; a retry does not create a second draft |
 | Rollback | Disconnect OAuth; DOM insert remains |
+
+### Phase 5 — implemented
+
+Changed from the plan: no document attachments on Gmail drafts yet (D-57); no approve-to-send (nothing is ever sent, D-51).
+
+| Part | Where | What it does |
+|---|---|---|
+| Gmail OAuth | `packages/messaging/src/gmail.ts`, `apps/web/src/server/messaging/gmail.ts`, `/api/integrations/gmail/{connect,callback,disconnect}` | Authorisation-code flow with PKCE (S256), `access_type=offline`; state = 256-bit random, stored as SHA-256 with the user id, single use, 10 minutes; verifier encrypted. Scopes: `gmail.readonly` (required) and `gmail.compose` (only when the user chooses "read + create drafts"); granted scopes outside the request are dropped; no read scope → not connected. Refresh token required; access/refresh tokens AES-GCM encrypted; refresh on expiry; `invalid_grant` marks the connection revoked. Disconnect revokes at Google and deletes connection, summaries and local drafts. Without `GMAIL_OAUTH_CLIENT_ID/SECRET`: "not configured", setup steps, no connect button. Endpoint overrides (for the mock) are ignored in production |
+| Gmail reading | `searchMail`, `readThread`, `/api/mail/threads`, `/api/mail/threads/:id` | Structured search (words, from, subject, after/before, unread) → quoted Gmail query, always `-in:spam -in:trash`; 20 threads per page; thread = latest 20 messages, 8 000 characters each, quoted history split off, HTML → text (scripts/styles dropped); attachments listed by name only, never downloaded; "waiting for your reply" when the last message is not from the account. Message bodies are never stored |
+| WhatsApp | `packages/messaging/src/whatsapp.ts`, `server/messaging/whatsapp.ts`, `/api/whatsapp/{preview,chats,chats/:id}`, `/api/integrations/whatsapp` | Personal chats only through the user's own **chat export (.txt, “Without media”, ≤ 5 MB)**: Android and iOS layouts, day/month order detection, multi-line messages, system and media lines; preview without storing; the user picks which name is theirs; stored encrypted (sender + text) with an expiry (7/30/90/365 days, default 30) and lazy purge; duplicate export refused; delete removes messages, drafts and summaries. WhatsApp Business Platform is detected from configuration only; **no sending** |
+| Conversation AI | `packages/ai/src/messages/conversation.ts`, `server/messaging/intelligence.ts`; purposes `understand_email`, `understand_whatsapp`, `draft_email`, `draft_whatsapp_reply` | Local model first; cloud only with the user's cloud switch **and** per-mailbox / per-chat consent (both default off); local failure never falls back; no model → rule-based result labelled "No AI". Messages sent as numbered untrusted blocks (≤ 60 messages, 40 000 characters). Summaries: action items and questions must cite and quote a message; due dates kept only when inside the quote. Drafts: cited refs checked, details (dates, times, amounts, links, emails, phones) not found in messages / facts / instruction listed as "check these", identity numbers refused. Facts: verified non-sensitive profile values (to cloud only with profile sharing) and an optional saved job |
+| Drafts & approval | `server/messaging/drafts.ts`, migration `message_drafts`, task approval `approval.create_gmail_draft` | Recipients come only from the thread's Reply-To/From headers; Cc/Bcc never added; recipients not editable; text editable until approval. Approval (DB only) freezes subject + body + recipients by hash and is bound to the recipients' hash; the next, non-repeatable step creates exactly that content as a **Gmail draft** (never sent). A recorded Gmail draft id is never created twice; changed text after approval is refused; an unknown outcome pauses the task (`needs_verification`). WhatsApp drafts: copy only |
+| Tasks | `server/tasks/engine.ts`, `@ufa/shared/tasks` | `summarize_email_thread`, `draft_email_reply` (draft → approval → create), `summarize_whatsapp_conversation`, `draft_whatsapp_reply`; inputs hold only thread/chat ids; step results hold ids and counts (summaries and drafts live in their own encrypted, deletable tables). Pause / resume / cancel / retry from the existing engine |
+| Migration | `0021_messaging.sql` | `oauth_states`, `mail_connections`, `whatsapp_chats`, `whatsapp_messages`, `message_insights`, `message_drafts`; forced RLS on all; `enc:` checks on every token and text column; scope whitelist; draft rules as CHECKs (WhatsApp never approved/created; Gmail created only with approved content); same-owner triggers |
+| UI | `/dashboard/messages` (Email / WhatsApp tabs) | Connect read-only or read + drafts, status, cloud consent, disconnect; search, thread view with refs, summary + action items, draft editor with fixed recipients and "check these" warnings, approve-to-create-draft; WhatsApp import with preview, chats, consent, retention, delete, summary, draft + copy |
+| API | 14 routes under `/api/integrations`, `/api/mail`, `/api/messages`, `/api/whatsapp` | `requireUser` first, validated ids, strict bodies, rate limits, `no-store` |
+
+**Known limitations / deferred**
+
+- **Real Gmail was not tested**: no Google OAuth client is configured. The full flow (consent → callback → token exchange → profile → search → read → summary → draft → approval → Gmail draft → disconnect/revoke) was verified only against a local mock of Google's endpoints. Google's own consent screen, token formats and quota errors may differ.
+- Google's `gmail.compose` scope also permits sending; the app has no send call (source test), but the permission itself is broader than drafts.
+- No attachments on drafts; attachments in emails are listed, not processed.
+- WhatsApp: personal chats only via exports (no live sync); Business Platform sending is not built; `.zip` exports must be unpacked; English/Hinglish question detection only.
+- Summaries are not refreshed automatically; old summaries stay until deleted (no retention timer for Gmail summaries).
 
 ## Phase 6 — Background work and local companion (optional)
 

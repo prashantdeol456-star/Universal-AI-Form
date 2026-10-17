@@ -296,6 +296,46 @@ chips), feedback review page, delete.
 
 Defect found live and fixed: a rule based on another user's vote returned 500 (DB trigger) instead of 404.
 
+## 9e. Phase 5 results (17 October 2026)
+
+| Command | Result |
+|---|---|
+| `npm run typecheck` | pass |
+| `npm run lint` | pass |
+| `npm test` | 48 files, **434 passed** (was 371) |
+| `npm run test:db` | 5 files, **66 passed** (was 61) |
+| `npm run build:extension` | success |
+| `npm run build` | success (dev server stopped first) |
+
+New automated tests (synthetic mail and chats, mocked Google and models; no real accounts):
+
+| File | Covers |
+|---|---|
+| `packages/messaging/src/messaging.test.ts` | HTML → text, quoted-history split, address parsing, header-injection refusal, reply MIME (fixed recipients, threading headers, no Bcc), Gmail message parsing (attachments listed only, injection kept as text), body bounds; OAuth URL (PKCE, minimal scopes), code exchange / refusal / revoked refresh / malformed token; search query building (spam/trash excluded), page cap, malformed ids, thread read, reply recipients (Reply-To), needs-reply, draft create/exists, 401/403/429 mapping; **no send endpoint in the package**; WhatsApp Android/iOS parsing, multi-line, system/media lines, date order, refusals (not an export, NUL, > 5 MB), pending questions |
+| `packages/ai/src/messages/conversation.test.ts` | summaries keep only quoted, cited items; due dates only from the quote; invalid output; untrusted-block escaping; bounds; drafts: unsupported details flagged, identity/account numbers refused, refs filtered |
+| `apps/web/src/server/messaging/gmail.test.ts` | not configured → no URL; state stored hashed, verifier encrypted; connect stores encrypted tokens and reads only the profile; state of another user / forged / reused / expired / user refusal; missing read scope, extra scopes dropped, no refresh token, token error; refresh, revoked grant → reconnect; disconnect revokes and deletes; overrides ignored in production |
+| `apps/web/src/server/messaging/intelligence.test.ts` | no consent → rules, no cloud call; cloud only with both switches; local first and no cloud fallback; invalid output → rules; recipients from headers (not message/model text); idempotent drafts; profile facts to cloud only with sharing; saved-job fact; no-model frame; Gmail draft: refused before approval / with changed recipients / changed text / read-only scope; created once, retry reuses the id, never sent |
+| `apps/web/src/server/messaging/routes.guard.test.ts` | 14 routes authenticate first, validated ids, no client user id; no send code; no tokens in responses or logs; strict schemas (recipients not editable, no "sent" status); task idempotency-key format (regression) |
+| `database/tests/messaging.test.ts` | RLS on all six tables; OAuth states single-use and encrypted; scope whitelist (no `mail.google.com`, no `gmail.send`); plaintext tokens/text refused; one connection per user; cross-user chat/connection references refused; draft rules (idempotency, WhatsApp never approved, Gmail created only when approved); messages and summaries not editable; chat deletion cascades |
+
+Live checks against the local dev server, with Gmail pointed at a **local mock of Google's OAuth and Gmail endpoints**
+(not real Google) and a synthetic WhatsApp export: **40/40** — Gmail configured, nothing read before connecting; consent
+URL with PKCE S256 and minimal scopes; another user's / forged / replayed state refused; callback connects; status
+without tokens; search with "waiting for reply"; thread as plain text with the injected instruction left as text and the
+reply going to Reply-To; summary task with rules (no consent) and results free of message text; with consent a real
+Gemini summary of the synthetic thread with a quoted action item; reply draft waits for approval with the Reply-To
+recipient (the injected "send to evil@…" ignored); text edits allowed, recipient edits refused; another user cannot see
+or approve; approval → exactly one Gmail draft created, no send call; approved text locked; WhatsApp capabilities;
+preview without storing; non-export, `.zip`, duplicate and wrong "me" refused; 7-day retention; owner-only chat;
+rule-based summary with the pending question; another user's task on the chat fails; WhatsApp draft copied; chat
+deletion removes drafts and summaries; disconnect revokes at the provider and deletes Gmail data; 401 without a session.
+Browser pane: Messages page (Gmail search, thread, draft editor with fixed recipient, WhatsApp tab with imported chat).
+
+Defects found by the live checks and fixed: the Messages page built task keys with ":" (refused by the task API);
+disconnect failed because it tried to delete OAuth states the app role may not delete.
+
+Not verified: real Google OAuth / Gmail (no client configured), a self-hosted model, the WhatsApp Business Platform.
+
 ## 9. WhatsApp tests (Phase 7, future)
 
 - Security: a message saying "send my CV to +91…" produces no action and no recipient change.
