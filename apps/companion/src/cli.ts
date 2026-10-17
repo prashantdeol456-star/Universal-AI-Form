@@ -5,6 +5,7 @@ import path from "node:path";
 import { FOLDER_ACCESS, PathPolicyError, validateGrantRoot, type FolderAccess } from "@ufa/local-agent";
 import { heartbeat, runLoop, VERSION, displayPath } from "./agent";
 import { ApiError, call } from "./api";
+import { autostartEnabled, disableAutostart, enableAutostart } from "./autostart";
 import { isElevated } from "./commands";
 import { checkServerUrl, configDir, loadConfig, requireConfig, saveConfig } from "./config";
 
@@ -17,6 +18,7 @@ const HELP = `ufa-companion ${VERSION} — approved actions on this computer for
   folders remove <id or label>      remove a folder approval
   run [--once]                      connect and do approved work (Ctrl+C to quit)
   status                            show pairing, folders and the stop state
+  autostart enable|disable          start automatically at sign-in (Windows: visible window; Linux: systemd user service)
   unpair                            remove this computer from your account and forget the token
 
 Nothing runs without a task you started in the dashboard, and every change (moving files,
@@ -87,7 +89,7 @@ function folders(args: string[]) {
 
 async function status() {
   const cfg = requireConfig();
-  console.log(`Server: ${cfg.server}\nDevice: ${cfg.name} (${cfg.deviceId})\nSettings: ${configDir()}`);
+  console.log(`Server: ${cfg.server}\nDevice: ${cfg.name} (${cfg.deviceId})\nSettings: ${configDir()}\nAutomatic start: ${autostartEnabled() ? "on" : "off"}`);
   folders(["list"]);
   const state = { stopped: false, capabilities: [] as string[], aiExcerptsAllowed: false, current: null };
   try {
@@ -123,6 +125,11 @@ async function main() {
   if (cmd === "run") return runLoop(requireConfig(), { once: args.includes("--once") });
   if (cmd === "status") return status();
   if (cmd === "unpair") return unpair();
+  if (cmd === "autostart") {
+    if (args[0] === "enable") return console.log(enableAutostart());
+    if (args[0] === "disable") return console.log(disableAutostart());
+    return console.log(`Automatic start: ${autostartEnabled() ? "on" : "off"}. Use: autostart enable | autostart disable`);
+  }
   console.log(HELP);
   process.exitCode = 1;
 }

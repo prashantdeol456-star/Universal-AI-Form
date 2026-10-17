@@ -2,7 +2,7 @@ import os from "node:os";
 import { checkLocalStep, type FolderGrant, type OrganizeBy } from "@ufa/local-agent";
 import { ApiError, call, type Claim, type HeartbeatReply, type StepReport } from "./api";
 import { runCommand } from "./commands";
-import { saveConfig, type CompanionConfig } from "./config";
+import { loadConfig, saveConfig, type CompanionConfig } from "./config";
 import { applyChanges, listStep, planOrganizeStep, summarizeFiles, undoChanges, writeReport } from "./files";
 
 /**
@@ -26,6 +26,9 @@ export interface AgentState {
 const log = (msg: string) => console.log(`[${new Date().toLocaleTimeString()}] ${msg}`);
 
 export async function heartbeat(cfg: CompanionConfig, state: AgentState, localAi: "available" | "unavailable" | "unknown" = "unknown") {
+  // Folders added or removed with "folders add/remove" while the companion runs take effect here.
+  const fresh = loadConfig();
+  if (fresh && fresh.deviceId === cfg.deviceId) cfg.folders = fresh.folders;
   const reply = await call<HeartbeatReply>(cfg.server, "/api/companion/device/heartbeat", {
     bearer: cfg.token,
     body: { version: VERSION, localAi, folders: cfg.folders.map((f) => ({ id: f.id, label: f.label, displayPath: displayPath(f.path), access: f.access })) },

@@ -321,6 +321,12 @@ export async function stopDevices(actor: Actor, deviceId: string | null) {
     if (deviceId && !rows.length) throw notFound("Device not found");
     return rows.map((r) => r.id);
   });
+  // Missions using these computers stop dispatching too (they never resume on their own).
+  if (ids.length) {
+    await asUser(actor, (tx) => tx`
+      update agent_missions m set status = 'paused', status_reason = 'Emergency stop: resume the mission when you are ready'
+       where m.status = 'running' and exists (select 1 from agent_mission_tasks p where p.mission_id = m.id and p.device_id = any(${ids}::uuid[]) and p.status in ('pending', 'running'))`);
+  }
   let paused = 0;
   for (const id of ids) {
     for (const t of await deviceTaskIds(actor, id, PAUSABLE)) {

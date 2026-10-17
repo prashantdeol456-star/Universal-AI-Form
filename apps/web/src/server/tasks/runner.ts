@@ -1,6 +1,7 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import { redact } from "@ufa/security";
+import { advanceMissions } from "../companion/missions";
 import { env } from "../env";
 import { tasks } from "./engine";
 
@@ -18,6 +19,8 @@ export function startTaskRunner(intervalMs = 3_000) {
     g.__ufaTaskRunnerBusy = true;
     try {
       await tasks().runOnce(workerId);
+      // Multi-agent missions start their next parts when earlier ones finish.
+      if (env().COMPANION_ENABLED) await advanceMissions();
     } catch (err) {
       console.error(`[tasks] runner tick failed: ${redact(err instanceof Error ? err.message : String(err))}`);
     } finally {

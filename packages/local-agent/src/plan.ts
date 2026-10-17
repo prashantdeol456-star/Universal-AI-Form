@@ -73,6 +73,27 @@ export interface LocalPlan {
 
 export type PlanResult = { ok: true; plan: LocalPlan } | { ok: false; question: string };
 
+/**
+ * A file-name filter from the request ("the invoices"), unless the word only appears as the
+ * folder's own name ("files in Invoices"): then every file of that folder is meant.
+ */
+function nameFilter(t: string, folderLabel: string, words: RegExp): string | null {
+  const m = words.exec(t);
+  if (!m) return null;
+  const word = m[1]!.replace(/s$/, "");
+  const label = folderLabel.toLowerCase();
+  const inText = [...t.matchAll(new RegExp(`\\b${word}s?\\b`, "g"))].length;
+  if (!label.includes(word)) return word;
+  // Mentions of the folder itself: "in/from/inside Invoices", else "of Invoices", else the bare name.
+  const lab = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const inPrep = [...t.matchAll(new RegExp(`\\b(?:in|from|inside|within)\\s+(?:the\\s+|my\\s+)?${lab}\\b`, "g"))].length;
+  const ofPrep = [...t.matchAll(new RegExp(`\\bof\\s+(?:the\\s+|my\\s+)?${lab}\\b`, "g"))].length;
+  const folderMentions = inPrep || Math.min(ofPrep, 1) || 1;
+  return inText > folderMentions ? word : null;
+}
+const FILE_WORDS = /\b(invoices?|receipts?|statements?|resumes?|cvs?|reports?|bills?)\b/;
+const REPORT_FILE_WORDS = /\b(invoices?|receipts?|statements?|resumes?|cvs?|bills?)\b/;
+
 function findFolder(text: string, folders: PlanFolder[], need: FolderAccess): PlanFolder | null | "ambiguous" {
   const t = text.toLowerCase();
   const usable = folders.filter((f) => f.access.includes(need));
@@ -125,7 +146,6 @@ export function planLocalTask(request: string, ctx: PlanContext): PlanResult {
     return f === "ambiguous" ? { q: `Which folder? You approved: ${ctx.folders.filter((x) => x.access.includes(need)).map((x) => `“${x.label}”`).join(", ")}.` } : f ? { f } : { q: `No folder is approved for ${need} yet. On your computer run: companion folders add "<folder>" --${need}` };
   };
   const exts = [...new Set([...t.matchAll(/\b(pdf|docx|txt|csv|xlsx|jpg|png)s?\b/g)].map((m) => m[1]!))];
-  const keyword = /\b(invoices?|receipts?|statements?|resumes?|cvs?|reports?|bills?)\b/.exec(t)?.[1]?.replace(/s$/, "") ?? null;
 
   if (/\b(undo|revert|put (them|it) back)\b/.test(t)) {
     if (!ctx.lastOrganizeTaskId) return { ok: false, question: "There is no completed organise task to undo." };
@@ -154,11 +174,14 @@ export function planLocalTask(request: string, ctx: PlanContext): PlanResult {
     if ("q" in out) return { ok: false, question: out.q.replace("Which folder?", "Which folder should the report go to?") };
     const format = /\b(excel|csv|spreadsheet)\b/.test(t) ? "csv" : /\bmarkdown|\.md\b/.test(t) ? "md" : ctx.preferences.reportFormat ?? "csv";
     const stamp = new Date().toISOString().slice(0, 10);
-    return finish("local_create_report", { deviceId: ctx.deviceId, sourceFolderId: src.f.id, outputFolderId: out.f.id, format, fileName: `report-${stamp}.${format}`, nameContains: keyword }, `List the ${keyword ?? ""} files in “${src.f.label}” and write a ${format.toUpperCase()} report into “${out.f.label}” after you approve.`.replace("  ", " "), ctx);
+    // Here "report" is the action, not a file-name filter ("a report of the invoices").
+    const reportKeyword = nameFilter(t, src.f.label, REPORT_FILE_WORDS);
+    return finish("local_create_report", { deviceId: ctx.deviceId, sourceFolderId: src.f.id, outputFolderId: out.f.id, format, fileName: `report-${stamp}.${format}`, nameContains: reportKeyword }, `List the ${reportKeyword ?? ""} files in “${src.f.label}” and write a ${format.toUpperCase()} report into “${out.f.label}” after you approve.`.replace("  ", " "), ctx);
   }
   if (/\b(summar|what('s| is) in|read|explain|review)\w*/.test(t) && /\b(files?|pdfs?|docs?|documents?|folder|invoices?|receipts?|reports?|notes?)\b/.test(t)) {
     const r = folderOr("read");
     if ("q" in r) return { ok: false, question: r.q };
+    const keyword = nameFilter(t, r.f.label, FILE_WORDS);
     return finish("local_summarize_files", { deviceId: ctx.deviceId, folderId: r.f.id, nameContains: keyword, extensions: exts.length ? exts : [], maxFiles: 10, detail: /\b(detail(ed)?|longer|in depth)\b/.test(t) ? "detailed" : ctx.preferences.summaryLength ?? "short" }, `Read up to 10 ${exts.length ? exts.join("/").toUpperCase() + " " : ""}${keyword ? `“${keyword}” ` : ""}files in “${r.f.label}” on your computer and summarise them.`, ctx);
   }
   return { ok: false, question: "I can summarise files, organise a folder, write a file report, run an approved project command (tests, lint, build, git status) or undo an organise. Which one do you want?" };

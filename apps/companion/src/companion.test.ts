@@ -208,3 +208,17 @@ describe("local policy before every step", () => {
     expect(spawnSync(process.execPath, ["-e", "1"]).status).toBe(0);
   });
 });
+
+describe("automatic start", () => {
+  it("Windows: a visible, minimised window, never hidden or elevated; Linux: a systemd user service without root", async () => {
+    const { startupContent } = await import("./autostart");
+    const win = startupContent("windows", "C:/node/node.exe", "C:/repo/companion.mjs", null);
+    expect(win).toContain('start "AI Form Assistant companion (close to stop)" /min "C:/node/node.exe" "C:/repo/companion.mjs" run');
+    expect(win).not.toMatch(/runas|wscript|vbs|hidden|-WindowStyle/i);
+    const unit = startupContent("systemd", "/usr/bin/node", "/srv/app/companion.mjs", "/home/u/.cfg");
+    expect(unit).toMatch(/ExecStart="\/usr\/bin\/node" "\/srv\/app\/companion.mjs" run/);
+    expect(unit).toMatch(/NoNewPrivileges=true/);
+    expect(unit).not.toMatch(/^User=root/m);
+    expect(unit).toMatch(/Environment="UFA_COMPANION_HOME=\/home\/u\/.cfg"/);
+  });
+});

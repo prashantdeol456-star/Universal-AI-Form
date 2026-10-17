@@ -7,6 +7,7 @@ import { Alert, Badge, Button, Card, Input, Label, Select } from "@/components/u
 import { api } from "@/lib/api-client";
 import { timeAgo } from "@/lib/labels";
 import type { DeviceView } from "@/server/companion/service";
+import { ApprovalsCard, DevicesOverview, MissionCard } from "./RemoteCards";
 
 interface CapabilityInfo {
   id: string;
@@ -54,6 +55,8 @@ export function CompanionClient({ devices, capabilities, ai }: { devices: Device
         </Button>
       </div>
       {msg && <Alert tone={msg.tone}>{msg.text}</Alert>}
+      <DevicesOverview devices={devices} />
+      <ApprovalsCard />
 
       <SetupCard hasDevice={active.length > 0} ai={ai} />
       <PairCard onPaired={() => router.refresh()} />
@@ -61,6 +64,7 @@ export function CompanionClient({ devices, capabilities, ai }: { devices: Device
         <DeviceCard key={d.id} device={d} capabilities={capabilities} onChange={() => router.refresh()} />
       ))}
       {active.length > 0 && <AskCard devices={active} />}
+      {active.length > 0 && <MissionCard devices={active} />}
     </div>
   );
 }

@@ -96,3 +96,12 @@ export async function createLocalTask(actor: Actor, req: { deviceId: string; tas
   const { lease_token: _t, lease_owner: _o, ...view } = task;
   return { task: view, created };
 }
+
+/** What is still missing before a computer task could run (used when a mission starts). */
+export async function missingForTask(actor: Actor, deviceId: string, taskType: LocalTaskType, input: Record<string, unknown>): Promise<string[]> {
+  const { ctx, stopped } = await contextFor(actor, deviceId);
+  if (stopped) return ["Clear the emergency stop for this computer"];
+  const parsed = LOCAL_TASK_INPUTS[taskType].safeParse({ ...input, deviceId });
+  if (!parsed.success) return [parsed.error.issues[0]?.message ?? "Invalid step"];
+  return missingFor({ taskType, input: parsed.data as Record<string, unknown> }, ctx);
+}

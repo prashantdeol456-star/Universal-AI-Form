@@ -27,7 +27,7 @@ const companionSrc = readdirSync(COMPANION).filter((f) => f.endsWith(".ts") && !
 
 describe("companion API route guards", () => {
   it("covers all companion and agent routes", () => {
-    expect(files.length).toBe(21);
+    expect(files.length).toBe(25);
   });
 
   for (const file of files) {
@@ -71,6 +71,10 @@ describe("companion program guards", () => {
         expect(src).toMatch(/linkSync\(from, to\);[^\n]*\n\s*unlinkSync\(from\);/);
       } else if (f.endsWith("cli.ts")) {
         expect(src.match(/rmSync\(path\.join\(configDir\(\), "config\.json"\)/g)).toHaveLength(1);
+        expect(unlinks).toHaveLength(1);
+      } else if (f.endsWith("autostart.ts")) {
+        // Only its own Startup / systemd file.
+        expect(src.match(/rmSync\(t\.file\)/g)).toHaveLength(1);
         expect(unlinks).toHaveLength(1);
       } else expect(unlinks, f).toHaveLength(0);
     }

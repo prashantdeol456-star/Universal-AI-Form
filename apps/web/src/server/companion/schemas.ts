@@ -63,3 +63,6 @@ export const feedbackSchema = z.strictObject({
   note: z.string().trim().max(500).nullish().transform((v) => v || null),
   scope: z.enum(["one_time", "future"]).default("one_time"),
 });
+
+export const missionPlanSchema = z.strictObject({ request: z.string().trim().min(3).max(1000), deviceId: z.uuid().nullish().transform((v) => v ?? null) });
+export const missionControlSchema = z.strictObject({ action: z.enum(["start", "pause", "resume", "cancel", "retry", "skip"]), seq: z.number().int().min(1).max(20).nullish().transform((v) => v ?? null) });

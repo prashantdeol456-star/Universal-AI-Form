@@ -189,3 +189,46 @@ describe("task planning", () => {
     expect(missingFor({ taskType: "local_create_report", input: { sourceFolderId: inv, outputFolderId: inv } }, ctx).join(" ")).toMatch(/for write/);
   });
 });
+
+describe("multi-agent missions: planner split and targeting", () => {
+  const devs = [
+    { id: "a", name: "Home PC" },
+    { id: "b", name: "Office PC" },
+    { id: "c", name: "Office PC 2" },
+  ];
+  it("splits at then / ; / new lines / phir, but not at a plain 'and'", async () => {
+    const { splitRequest } = await import("./mission");
+    expect(splitRequest("Summarise the invoices and receipts in Invoices, then run the tests in app; organise Downloads\nundo")).toEqual(["Summarise the invoices and receipts in Invoices", "run the tests in app", "organise Downloads", "undo"]);
+    expect(splitRequest("Invoices summarise karo aur phir tests chalao")).toEqual(["Invoices summarise karo", "tests chalao"]);
+  });
+  it("targets one named computer (longest name first), all computers, or the default", async () => {
+    const { targetDevices, agentFor } = await import("./mission");
+    expect(targetDevices("run the tests on Office PC 2", devs, "a")).toEqual({ text: "run the tests", deviceIds: ["c"] });
+    expect(targetDevices("on office pc organise Downloads", devs, "a")).toEqual({ text: "organise Downloads", deviceIds: ["b"] });
+    expect(targetDevices("Home PC par tests chalao", devs, null)).toMatchObject({ deviceIds: ["a"] });
+    expect(targetDevices("run git status on all computers", devs, "a")).toEqual({ text: "run git status", deviceIds: ["a", "b", "c"] });
+    expect(targetDevices("sab computers par git status", devs, null)).toMatchObject({ deviceIds: ["a", "b", "c"] });
+    expect(targetDevices("organise Downloads", devs, "b")).toMatchObject({ deviceIds: ["b"] });
+    expect(targetDevices("organise Downloads", devs, null)).toHaveProperty("question");
+    expect(agentFor("local_run_command")).toBe("command");
+    expect(agentFor("local_organize_files")).toBe("file");
+  });
+});
+
+describe("report planning (regression)", () => {
+  it("'a csv report of the invoices' filters on 'invoice', not on the word 'report'", () => {
+    const ctx: PlanContext = {
+      deviceId: "11111111-1111-4111-8111-111111111111",
+      capabilities: ["list_approved_folders", "create_file_in_approved_folder"],
+      folders: [
+        { id: "22222222-2222-4222-8222-222222222222", label: "Invoices", access: ["read"] },
+        { id: "33333333-3333-4333-8333-333333333333", label: "Reports", access: ["read", "write"] },
+      ],
+      preferences: {},
+    };
+    const r = planLocalTask("create a csv report of the invoices in Invoices", ctx);
+    expect(r.ok && r.plan.input).toMatchObject({ nameContains: "invoice", sourceFolderId: "22222222-2222-4222-8222-222222222222", outputFolderId: "33333333-3333-4333-8333-333333333333", format: "csv" });
+    const all = planLocalTask("make a file report of Invoices", ctx);
+    expect(all.ok && all.plan.input.nameContains).toBeNull();
+  });
+});
