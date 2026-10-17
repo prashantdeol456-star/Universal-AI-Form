@@ -233,13 +233,16 @@ adds nothing to other screens), no Gmail job alerts (Phase 5), no link to Phase 
 | Tracker | `tracker.ts`, `service.ts` `updateApplication` | Statuses interested → closed (11); any manual move, but applied/assessment/interview/offer from a pre-submit status need "I submitted this myself" (API 409 otherwise, DB CHECK as backstop). Deadline / follow-up due states; activity history; forms filled with the assistant on the job's site are listed as evidence, never as "applied" |
 | Safe preparation | job page "Apply on the employer's site" | Shows the exact address before opening (new tab, `noopener`); filling uses the Phase 2 extension flow (site permission, preview with evidence, fill, verify); no document is uploaded and nothing is submitted by the jobs module |
 | UI | `/dashboard/jobs`, `/jobs/[id]`, `/jobs/tracker`, `/jobs/sources`, `/jobs/preferences` | Filters (keywords, title, employer, location, arrangement, employment type, max experience, found since, saved, score range, include closed), pagination, source on every listing, recalculate scores |
-| API | 12 routes under `/api/jobs` | `requireUser` first, UUID ids, zod (strict) bodies, rate limits, `no-store` |
+| API | 17 routes under `/api/jobs` | `requireUser` first, UUID ids, zod (strict) bodies, rate limits, `no-store` |
+| Feedback and learning (17 Oct, PROMPT 6 step 10) | migration `0020_job_feedback.sql`, `packages/jobs/src/feedback.ts`, `server/jobs/feedback.ts`, job page "Your feedback on this match", `/dashboard/jobs/feedback` | **Votes** ("was this match useful?" + reason): stored for review only, change nothing. **Requirement corrections** for one job (remove/add a skill as required or preferred, set years or education): applied before scoring that job, shown as such, never touch the profile. **Ranking rules** (employer / keyword / skill / title word, weight −10…10): written by the user or approved from a vote (optional link to the vote); they add a separate, bounded (±20) ordering adjustment shown on every affected job — the fit score never changes. All user-scoped (RLS), listed for review, deletable (votes/corrections cannot be edited, only deleted); scores recompute on every change. No model training; nothing becomes a profile fact |
+| Also added (17 Oct) | search, analysis | "Shortlisted only" filter; partial-results notice naming boards whose last read failed; AI analysis also returns up to 6 interview practice questions, each tied to an exact quote from the job text (dropped otherwise) |
 
 **Known limitations / deferred**
 
 - Only Greenhouse and Lever boards are fetched. Lever's API does not name the company (the board name is shown). No other provider (Indeed, LinkedIn, Naukri, Workday) is integrated.
 - Skill matching is lexical (lexicon + the user's own skills); synonyms outside the lexicon are missed. The score is provisional when the description has no clear requirements.
-- AI job summaries were not verified live: Gemini returned HTTP 503 on every attempt during the checks (the error path was verified).
+- AI job summaries: Gemini returned HTTP 503 during the first checks (16 Oct); on 17 Oct a summary with quoted requirements and interview questions was verified live.
+- Votes are not aggregated into automatic ranking changes; only rules the user approves change the order.
 - Reminders are shown in the tracker only (no email/WhatsApp, Phase 5+). The extension does not yet link a fill to a saved job automatically.
 - Experience range, salary and industries in preferences are stored and shown but not scored.
 

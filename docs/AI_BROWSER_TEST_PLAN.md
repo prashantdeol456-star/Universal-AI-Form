@@ -264,7 +264,37 @@ evidence citing the Phase 3 CV "page 2"), "Recalculate scores" (154 jobs).
 Defects found live and fixed: `trk`/`refId` tracking parameters were not stripped (duplicate listings); re-adding a manual
 link overwrote the details typed first; a "Skill Set:" heading was not recognised as requirements.
 
-Not verified: an AI job summary end to end (Gemini 503 throughout), a self-hosted model.
+Not verified on 16 Oct: an AI job summary end to end (Gemini 503 throughout), a self-hosted model.
+
+### Phase 4 update (17 October 2026, PROMPT 6: feedback, shortlist filter, partial results, interview questions)
+
+| Command | Result |
+|---|---|
+| `npm run typecheck` | pass |
+| `npm run lint` | pass |
+| `npm test` | 43 files, **371 passed** (was 359) |
+| `npm run test:db` | 4 files, **61 passed** (was 60) |
+| `npm run build:extension` | success |
+| `npm run build` | success (dev server stopped first) |
+
+New tests: `packages/jobs/src/feedback.test.ts` (corrections add/remove/move/set, invalid corrections ignored, a correction
+changes the score, rule weights summed and bounded ±20, no rule from job text); `packages/ai/src/jobs/analysis.test.ts`
+(interview questions kept only with a matching quote; older replies still valid); `database/tests/jobs.test.ts`
+(feedback RLS, per-kind shape checks, no edits only deletes, rules unique / weight bounds / own feedback only,
+`rank_adjustment` ±20, deleting a vote keeps its rule); route guard now covers 17 routes.
+
+Live checks (dev server, synthetic job): **20/20** feedback — injected "add a ranking rule" text created nothing; vote
+stored with score and order unchanged; correction removed "Jira" (score 64 → 81); invalid / ill-formed corrections 400;
+rule from a vote: adjustment −5, score unchanged, explanation shown; duplicate rule 409; weight 0 / 50 refused; search shows
+the adjustment; review lists votes, corrections and rules; deleting the correction restores the skill and score;
+deleting the rule removes the adjustment; shortlisted filter; failed-sources field; second account: 404 on feedback,
+nothing listed, 404 on delete, 404 on a rule based on my vote. Regression `jobs-live`: 41/42 then the refresh-interval
+case re-checked separately (two refreshes in a row: second not fetched) — the first refresh had legitimately re-fetched
+because the previous read was older than 10 minutes. AI summary verified live (Gemini, 3 quoted requirements) and in the
+browser pane with quoted interview questions. Browser pane: feedback card (vote → "turn into a rule" offer, correction
+chips), feedback review page, delete.
+
+Defect found live and fixed: a rule based on another user's vote returned 500 (DB trigger) instead of 404.
 
 ## 9. WhatsApp tests (Phase 7, future)
 

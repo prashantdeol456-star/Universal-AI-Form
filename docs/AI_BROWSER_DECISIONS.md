@@ -71,6 +71,9 @@ Each entry: question, options, recommendation, and whether the owner's approval 
 | D-45 | Listings are per user (not a shared catalogue) | RLS stays simple and nobody learns which jobs another user looks at |
 | D-46 | "Applied" and later statuses need the user's explicit confirmation (API) and `submitted_confirmed_at` (DB CHECK); form fills are shown as evidence only | Never mark an application submitted because a form was filled |
 | D-47 | AI job summaries send only the public job text; each point must quote it | No personal data needed; quotes stop invented requirements |
+| D-48 | Feedback has three kinds with different power: votes change nothing; corrections change one job's requirements; ranking rules (user-written or user-approved from a vote) change order only, bounded ±20, never the fit score | Learning stays explicit, explainable and reversible; a prediction never silently becomes a rule or a fact |
+| D-49 | Feedback rows can be deleted but not edited; deleting recomputes scores | A clear history; "undo" is always available |
+| D-50 | Interview practice questions come from the AI summary and must quote the job requirement they are about | Questions about the job, never assumptions about the candidate |
 
 ## Personal WhatsApp vs WhatsApp Business
 
