@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import type { JsonObject } from "@ufa/tasks";
 import { requireUser } from "@/server/auth/session";
-import { json, parseBody, rateLimit, route } from "@/server/http";
+import { badRequest, json, parseBody, rateLimit, route } from "@/server/http";
 import { tasks } from "@/server/tasks/engine";
 import { kickTaskRunner } from "@/server/tasks/runner";
 import { createTaskSchema, listTasksQuery } from "@/server/tasks/schemas";
@@ -19,6 +19,8 @@ export const POST = route(async (req: NextRequest) => {
   const user = await requireUser();
   rateLimit("task-create", user.id, 30, 10 * 60_000);
   const body = await parseBody(req, createTaskSchema);
+  // Computer tasks are created on the Companion page, which checks the device and folders first.
+  if (body.taskType.startsWith("local_")) throw badRequest("Create tasks for your computer from the Companion page");
   const { task, created } = await tasks().createTask(user, { ...body, input: body.input as JsonObject });
   if (created) kickTaskRunner();
   const { lease_token: _t, lease_owner: _o, ...view } = task;

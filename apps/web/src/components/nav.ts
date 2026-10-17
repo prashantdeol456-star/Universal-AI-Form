@@ -27,6 +27,8 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { href: "/dashboard/jobs", label: "Jobs", icon: "form", group: "Forms" },
   { href: "/dashboard/tasks", label: "Tasks", icon: "spark", group: "Forms" },
   { href: "/dashboard/learning", label: "Learning", icon: "spark", group: "Forms" },
+  { href: "/dashboard/companion", label: "Computer (companion)", icon: "settings", group: "Forms" },
+  { href: "/dashboard/memory", label: "Agent memory", icon: "bookmark", group: "Forms" },
   { href: "/dashboard/cafe-access", label: "Café access", icon: "store", group: "Account" },
   { href: "/dashboard/privacy", label: "Privacy & Access", icon: "shield", group: "Account" },
   { href: "/dashboard/settings", label: "Settings", icon: "settings", group: "Account" },

@@ -6,7 +6,9 @@ import { Badge, Card, PageHeader } from "@/components/ui";
 import { timeAgo } from "@/lib/labels";
 import { requirePageUser } from "@/server/auth/session";
 import { tasks } from "@/server/tasks/engine";
+import { LocalOutput } from "../LocalOutput";
 import { STEP_TONE, TASK_TONE } from "../meta";
+import { TaskFeedback } from "../TaskFeedback";
 import { ApprovalActions, AutoRefresh, CopyButton, TaskControls } from "../TasksClient";
 
 /** Step output for the owner: an email draft is JSON {subject, body}; answers are plain text. */
@@ -40,6 +42,8 @@ export default async function TaskPage({ params }: { params: Promise<{ id: strin
   const canRetry = Boolean((failedStep && failedStep.attempt_count < 3) || uncertain);
   const live = !["completed", "cancelled", "failed", "paused"].includes(task.status);
   const browserType = TASK_TYPES[task.task_type as keyof typeof TASK_TYPES]?.browser;
+  const local = task.task_type.startsWith("local_");
+  const deviceName = local ? String((task.input_json as { display?: { device?: string } }).display?.device ?? "your computer") : null;
 
   return (
     <>
@@ -66,6 +70,18 @@ export default async function TaskPage({ params }: { params: Promise<{ id: strin
         </Card>
       )}
 
+      {task.status === "waiting_for_browser" && local && (
+        <Card>
+          <p className="text-sm text-gray-700">
+            Waiting for the companion on <b>{deviceName}</b>. Make sure <code className="rounded bg-gray-100 px-1">npm run companion -- run</code> is running there (see{" "}
+            <Link href="/dashboard/companion" className="text-brand-700 hover:underline">
+              Computer
+            </Link>
+            ).
+          </p>
+        </Card>
+      )}
+
       {pending && (
         <Card title="Needs your approval">
           <p className="mb-3 text-sm text-gray-700">{pending.action_summary}</p>
@@ -78,7 +94,7 @@ export default async function TaskPage({ params }: { params: Promise<{ id: strin
         <Card className="lg:col-span-3" title="Steps">
           <ol className="space-y-3">
             {steps.map((s, i) => {
-              const out = s.output ? outputText(s.output) : null;
+              const out = s.output && !local ? outputText(s.output) : null;
               return (
                 <li key={s.id} className="rounded-lg border border-gray-100 p-3">
                   <div className="flex items-start justify-between gap-3">
@@ -90,6 +106,11 @@ export default async function TaskPage({ params }: { params: Promise<{ id: strin
                     <Badge tone={STEP_TONE[s.status]}>{s.error_code === "needs_verification" ? "Check needed" : STEP_STATUS_LABELS[s.status]}</Badge>
                   </div>
                   {s.error_message && <p className="mt-1 text-xs text-red-700">{s.error_message}</p>}
+                  {local && s.output && (
+                    <div className="mt-2 rounded-md bg-gray-50 p-2 text-sm">
+                      <LocalOutput stepKey={s.step_key} output={s.output} taskType={task.task_type} />
+                    </div>
+                  )}
                   {out && (
                     <div className="mt-2 rounded-md bg-gray-50 p-2 text-sm">
                       {out.subject && <div className="mb-1 font-semibold text-gray-900">{out.subject}</div>}
@@ -109,6 +130,14 @@ export default async function TaskPage({ params }: { params: Promise<{ id: strin
             <TaskControls id={task.id} status={task.status} uncertain={uncertain} canRetry={canRetry} />
             {!live && task.status !== "paused" && task.status !== "failed" && <p className="text-sm text-gray-500">This task is {TASK_STATUS_LABELS[task.status].toLowerCase()}.</p>}
           </Card>
+          {(task.status === "completed" || task.status === "failed") && (
+            <TaskFeedback
+              taskId={task.id}
+              steps={steps.map((s) => ({ key: s.step_key, title: s.title }))}
+              canSaveWorkflow={local && task.status === "completed" && task.task_type !== "local_undo_changes"}
+              defaultName={task.title}
+            />
+          )}
           <Card title="History">
             <ul className="space-y-2 text-sm">
               {events.map((e) => (

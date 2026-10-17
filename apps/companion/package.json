@@ -1,0 +1,21 @@
+{
+  "name": "@ufa/companion",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local companion for the AI Form Assistant: approved file actions and allowlisted commands on your own computer",
+  "bin": { "ufa-companion": "./dist/companion.mjs" },
+  "scripts": {
+    "build": "node build.mjs",
+    "start": "node dist/companion.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ufa/document-engine": "*",
+    "@ufa/local-agent": "*",
+    "@ufa/security": "*"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  }
+}

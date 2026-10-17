@@ -171,7 +171,7 @@ export function createTaskEngine(opts: EngineOptions) {
         returning *`;
       let n = 0;
       for (const s of steps) {
-        const idempotent = s.idempotent ?? !s.type.startsWith("browser.");
+        const idempotent = s.idempotent ?? !(s.type.startsWith("browser.") || s.type.startsWith("local."));
         await tx`insert into task_steps (task_id, user_id, step_key, step_type, title, idempotent, input_json, sequence_number)
                  values (${task!.id}, ${actor.id}, ${s.key}, ${s.type}, ${clip(s.title, 200)}, ${idempotent}, ${tx.json(s.input ?? {})}, ${s.sequence ?? n})`;
         n++;
@@ -359,22 +359,44 @@ export function createTaskEngine(opts: EngineOptions) {
 
   /** The user's extension claims its next browser step. Only the caller's own tasks are visible (RLS). */
   async function claimBrowserStep(actor: Actor, workerId: string, taskId?: string | null) {
+    return claimExternalStep(actor, workerId, "browser.", taskId);
+  }
+
+  /**
+   * An external worker (the extension for "browser." steps, a paired local companion for "local."
+   * steps) claims the next step of that kind in one of the caller's own tasks. `accept` lets the
+   * caller restrict which tasks it may take (a companion takes only tasks addressed to its device).
+   */
+  async function claimExternalStep(actor: Actor, workerId: string, prefix: "browser." | "local.", taskId?: string | null, accept?: (task: TaskRow) => boolean) {
     return asUser(actor, async (tx) => {
       // A worker acting on one page claims that page's task only.
-      const [task] = await tx<TaskRow[]>`
+      const candidates = await tx<TaskRow[]>`
         select * from tasks where user_id = ${actor.id} and status = 'waiting_for_browser' ${taskId ? tx`and id = ${taskId}` : tx``}
-         order by priority desc, created_at for update skip locked limit 1`;
-      if (!task) return null;
-      const steps = await stepsOf(tx, task.id);
-      const step = nextStep(steps);
-      if (!step || !step.step_type.startsWith("browser.") || step.status !== "pending") return null;
+         order by priority desc, created_at for update skip locked limit 20`;
+      let task: TaskRow | undefined;
+      let step: StepRow | undefined;
+      let all: StepRow[] = [];
+      for (const t of candidates) {
+        if (accept && !accept(t)) continue;
+        all = await stepsOf(tx, t.id);
+        const s = nextStep(all);
+        if (s && s.step_type.startsWith(prefix) && s.status === "pending") {
+          task = t;
+          step = s;
+          break;
+        }
+      }
+      if (!task || !step) return null;
+      // Non-secret results of the finished steps (e.g. the approved plan); encrypted outputs stay on the server.
+      const previous: Record<string, JsonObject | null> = {};
+      for (const s of all) if (s.status === "completed") previous[s.step_key] = (s.result_json as JsonObject | null) ?? null;
       const token = randomUUID();
       const running = await setStep(tx, step, "running");
       const t = await setTask(tx, task, "running");
       await tx`update tasks set lease_owner = ${clip(workerId, 100)}, lease_token = ${token}, lease_expires_at = now() + ${`${leaseMs} milliseconds`}::interval,
                  started_at = coalesce(started_at, now()) where id = ${t.id}`;
-      await event(tx, t, "step.started", `Started "${step.title}" in your browser`, {}, step.id);
-      return { task: { id: t.id, title: t.title, task_type: t.task_type, input_json: t.input_json, checkpoint_json: t.checkpoint_json }, step: running, leaseToken: token };
+      await event(tx, t, "step.started", `Started "${step.title}" ${prefix === "local." ? "on your computer" : "in your browser"}`, {}, step.id);
+      return { task: { id: t.id, title: t.title, task_type: t.task_type, input_json: t.input_json, checkpoint_json: t.checkpoint_json }, step: running, leaseToken: token, previous };
     });
   }
 
@@ -383,7 +405,7 @@ export function createTaskEngine(opts: EngineOptions) {
     actor: Actor,
     taskId: string,
     stepId: string,
-    report: { leaseToken: string; outcome: "progress" | "completed" | "failed" | "uncertain"; message?: string | null; result?: JsonObject | null; checkpoint?: JsonObject | null },
+    report: { leaseToken: string; outcome: "progress" | "completed" | "failed" | "uncertain"; message?: string | null; result?: JsonObject | null; checkpoint?: JsonObject | null; secret?: string | null },
   ) {
     return asUser(actor, async (tx) => {
       const task = await lockTask(tx, taskId);
@@ -400,7 +422,8 @@ export function createTaskEngine(opts: EngineOptions) {
         return { ok: true as const };
       }
       if (report.outcome === "completed") {
-        await setStep(tx, step, "completed", { result_json: report.result ?? null });
+        // Personal output of a worker step (e.g. a summary of local files) is stored encrypted.
+        await setStep(tx, step, "completed", { result_json: report.result ?? null, result_secret: report.secret ? opts.encrypt(report.secret) : null });
         if (task.status === "running") await setTask(tx, task, "queued");
         await event(tx, task, "step.completed", msg ?? `Finished "${step.title}"`, {}, step.id);
       } else if (report.outcome === "failed") {
@@ -519,10 +542,11 @@ export function createTaskEngine(opts: EngineOptions) {
           return { kind: "done" } as const;
         }
       }
-      if (step.step_type.startsWith("browser.")) {
+      if (step.step_type.startsWith("browser.") || step.step_type.startsWith("local.")) {
         if (step.status === "pending") {
+          // Same waiting state for both kinds of external worker (browser extension, local companion).
           await setTask(tx, task, "waiting_for_browser");
-          await event(tx, task, "task.waiting_for_browser", `"${step.title}" needs your browser`, {}, step.id);
+          await event(tx, task, "task.waiting_for_browser", `"${step.title}" needs your ${step.step_type.startsWith("local.") ? "computer (local companion)" : "browser"}`, {}, step.id);
         }
         await releaseLease(tx, task.id, claim.token);
         return { kind: "done" } as const;
@@ -662,6 +686,7 @@ export function createTaskEngine(opts: EngineOptions) {
     decideApproval,
     addPage,
     claimBrowserStep,
+    claimExternalStep,
     reportStep,
     saveCheckpoint,
     recoverExpiredLeases,

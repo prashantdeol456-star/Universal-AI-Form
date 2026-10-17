@@ -4,7 +4,7 @@ import type { TransactionSql } from "@ufa/db";
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 export type JsonObject = { [key: string]: Json };
 
-export type StepType = `server.${string}` | `browser.${string}` | `approval.${string}`;
+export type StepType = `server.${string}` | `browser.${string}` | `local.${string}` | `approval.${string}`;
 
 export interface StepSpec {
   key: string;

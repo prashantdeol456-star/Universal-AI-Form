@@ -33,7 +33,7 @@ export default tseslint.config(
     rules: reactHooks.configs.recommended.rules,
   },
   {
-    files: ["packages/db/src/cli.ts", "scripts/**"],
+    files: ["packages/db/src/cli.ts", "scripts/**", "apps/companion/src/**"],
     rules: { "no-console": "off" },
   },
 );

@@ -22,11 +22,19 @@ export const AI_PURPOSES = [
   "understand_email",
   "understand_whatsapp",
   "draft_whatsapp_reply",
+  // Phase 6 (local companion)
+  "summarize_local_document",
+  "review_task_result",
+  "classify_file",
+  "understand_screen",
+  "learn_workflow",
 ] as const;
 export type AIPurpose = (typeof AI_PURPOSES)[number];
 
 /** Purposes with a real implementation behind the router. The others are reserved and refuse to run. */
-export const IMPLEMENTED_PURPOSES: ReadonlySet<AIPurpose> = new Set<AIPurpose>(["map_fields", "draft_email", "draft_answer", "extract_facts", "match_job", "understand_email", "understand_whatsapp", "draft_whatsapp_reply"]);
+export const IMPLEMENTED_PURPOSES: ReadonlySet<AIPurpose> = new Set<AIPurpose>(["map_fields", "draft_email", "draft_answer", "extract_facts", "match_job", "understand_email", "understand_whatsapp", "draft_whatsapp_reply", "plan_task", "summarize_local_document", "review_task_result"]);
+// Reserved (refuse to run): understand_document, classify_file (files are classified by rules), understand_screen (no screen
+// capture yet), learn_workflow (workflows are learned from the task record, without a model).
 
 /**
  * - local_only: never call a cloud model;

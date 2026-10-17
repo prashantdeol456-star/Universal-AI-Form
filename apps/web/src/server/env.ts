@@ -77,6 +77,10 @@ const schema = z.object({
   WHATSAPP_RETENTION_DAYS: z.coerce.number().int().min(1).max(365).default(30),
   // Conversation summaries / reply drafts written by cloud AI per user per day.
   MESSAGES_AI_DAILY_LIMIT: z.coerce.number().int().min(0).max(10_000).default(50),
+  // Phase 6: local companion. Cloud AI calls per user per day for plans, local-file summaries and result reviews.
+  COMPANION_AI_DAILY_LIMIT: z.coerce.number().int().min(0).max(10_000).default(30),
+  // Off by default: the companion API (pairing, device requests) answers 404 until enabled.
+  COMPANION_ENABLED: z.stringbool().default(false),
 
   // Learning engine: promotes mappings that several different users agree on (phase 9).
   LEARNING_ENABLED: z.stringbool().default(true),

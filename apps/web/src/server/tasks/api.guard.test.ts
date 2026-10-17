@@ -18,7 +18,7 @@ const files = [...routeFiles(path.join(API, "tasks")), ...routeFiles(path.join(A
 
 describe("task API route guards", () => {
   it("covers all task, approval and site routes", () => {
-    expect(files.length).toBe(11);
+    expect(files.length).toBe(12);
   });
 
   for (const file of files) {

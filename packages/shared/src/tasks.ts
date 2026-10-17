@@ -83,7 +83,7 @@ export function stepSourcesFor(to: StepStatus): StepStatus[] {
 export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
   queued: "Queued",
   running: "Running",
-  waiting_for_browser: "Waiting for the browser",
+  waiting_for_browser: "Waiting for your browser or computer",
   waiting_for_approval: "Needs your approval",
   paused: "Paused",
   completed: "Completed",
@@ -110,5 +110,11 @@ export const TASK_TYPES = {
   draft_email_reply: { label: "Draft an email reply (Gmail draft after approval)", browser: false },
   summarize_whatsapp_conversation: { label: "Summarise an imported WhatsApp chat", browser: false },
   draft_whatsapp_reply: { label: "Draft a WhatsApp reply (you copy it)", browser: false },
+  // Phase 6: run on a paired computer by the local companion.
+  local_summarize_files: { label: "Summarise files on your computer", browser: false, local: true },
+  local_organize_files: { label: "Organise a folder on your computer (after you approve the preview)", browser: false, local: true },
+  local_create_report: { label: "Create a file report on your computer", browser: false, local: true },
+  local_run_command: { label: "Run an approved command on your computer", browser: false, local: true },
+  local_undo_changes: { label: "Undo an organise on your computer", browser: false, local: true },
 } as const;
 export type TaskType = keyof typeof TASK_TYPES;

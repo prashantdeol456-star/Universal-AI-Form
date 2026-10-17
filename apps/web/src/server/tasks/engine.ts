@@ -5,6 +5,7 @@ import { checkUrl, sameOrigin } from "@ufa/form-engine";
 import { createTaskEngine, TaskError, type ApprovalSpec, type JsonObject, type ServerStepHandler, type TaskEngine, type TaskTemplate } from "@ufa/tasks";
 import { z } from "zod";
 import { draftAnswer, saveAnswer } from "../agent/service";
+import { localApprovals, localServerHandlers, localTemplates } from "../companion/tasks";
 import { composeEmail } from "../compose/service";
 import { db, decryptValue, encryptValue } from "../db";
 import { approveDraftInTx, createApprovedGmailDraft } from "../messaging/drafts";
@@ -242,6 +243,13 @@ const approvals: Record<string, ApprovalSpec> = {
 const g = globalThis as unknown as { __ufaTasks?: TaskEngine };
 
 export function tasks(): TaskEngine {
-  g.__ufaTasks ??= createTaskEngine({ db: db(), templates, serverHandlers, approvals, encrypt: encryptValue, decrypt: decryptValue });
+  g.__ufaTasks ??= createTaskEngine({
+    db: db(),
+    templates: { ...templates, ...localTemplates },
+    serverHandlers: { ...serverHandlers, ...localServerHandlers },
+    approvals: { ...approvals, ...localApprovals },
+    encrypt: encryptValue,
+    decrypt: decryptValue,
+  });
   return g.__ufaTasks;
 }

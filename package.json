@@ -14,7 +14,7 @@
     "dev": "npm run dev -w @ufa/web",
     "build": "npm run build -w @ufa/web",
     "start": "npm run start -w @ufa/web",
-    "typecheck": "tsc -p tsconfig.json --noEmit && npm run typecheck -w @ufa/web && npm run typecheck -w @ufa/extension",
+    "typecheck": "tsc -p tsconfig.json --noEmit && npm run typecheck -w @ufa/web && npm run typecheck -w @ufa/extension && npm run typecheck -w @ufa/companion",
     "lint": "eslint .",
     "test": "vitest run --project unit",
     "test:watch": "vitest",
@@ -30,7 +30,9 @@
     "dev:db": "node scripts/dev-db.mjs",
     "build:extension": "npm run build -w @ufa/extension",
     "test-form": "node apps/test-form/server.mjs",
-    "ml": "tsx ml/scripts/ml.mts"
+    "ml": "tsx ml/scripts/ml.mts",
+    "build:companion": "npm run build -w @ufa/companion",
+    "companion": "node apps/companion/dist/companion.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.35.0",
