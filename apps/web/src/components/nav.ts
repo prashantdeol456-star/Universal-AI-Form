@@ -19,6 +19,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { href: "/dashboard/documents", label: "Documents", icon: "file", group: "Your data" },
   { href: "/dashboard/knowledge", label: "Knowledge search", icon: "spark", group: "Your data" },
   { href: "/dashboard/assistant", label: "AI Assistant", icon: "chat", group: "Your data" },
+  { href: "/dashboard/messages", label: "Messages", icon: "chat", group: "Your data" },
   { href: "/dashboard/applications", label: "Applications", icon: "form", group: "Forms" },
   { href: "/dashboard/history", label: "History", icon: "history", group: "Forms" },
   { href: "/dashboard/saved-forms", label: "Saved Forms", icon: "bookmark", group: "Forms" },

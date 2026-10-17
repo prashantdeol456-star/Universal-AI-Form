@@ -106,5 +106,9 @@ export const TASK_TYPES = {
   draft_email: { label: "Draft an email", browser: false },
   draft_answers: { label: "Draft answers to application questions", browser: false },
   fill_form: { label: "Fill a form in the browser", browser: true },
+  summarize_email_thread: { label: "Summarise an email conversation", browser: false },
+  draft_email_reply: { label: "Draft an email reply (Gmail draft after approval)", browser: false },
+  summarize_whatsapp_conversation: { label: "Summarise an imported WhatsApp chat", browser: false },
+  draft_whatsapp_reply: { label: "Draft a WhatsApp reply (you copy it)", browser: false },
 } as const;
 export type TaskType = keyof typeof TASK_TYPES;

@@ -20,6 +20,21 @@
       "port": 3001
     },
     {
+      "name": "web-3001-mock-google",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["-w", "@ufa/web", "next", "dev", "-p", "3001"],
+      "env": {
+        "GMAIL_OAUTH_CLIENT_ID": "mock-client-id",
+        "GMAIL_OAUTH_CLIENT_SECRET": "mock-client-secret",
+        "GMAIL_OAUTH_REDIRECT_URI": "http://localhost:4000/api/integrations/gmail/callback",
+        "GOOGLE_OAUTH_AUTH_URL": "http://localhost:4100/auth",
+        "GOOGLE_OAUTH_TOKEN_URL": "http://localhost:4100/token",
+        "GOOGLE_OAUTH_REVOKE_URL": "http://localhost:4100/revoke",
+        "GMAIL_API_BASE": "http://localhost:4100/gmail/v1/users/me"
+      },
+      "port": 3001
+    },
+    {
       "name": "test-form-3001",
       "runtimeExecutable": "node",
       "runtimeArgs": ["apps/test-form/server.mjs"],

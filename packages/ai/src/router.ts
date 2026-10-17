@@ -19,13 +19,14 @@ export const AI_PURPOSES = [
   "match_job",
   "plan_task",
   "understand_document",
+  "understand_email",
   "understand_whatsapp",
   "draft_whatsapp_reply",
 ] as const;
 export type AIPurpose = (typeof AI_PURPOSES)[number];
 
 /** Purposes with a real implementation behind the router. The others are reserved and refuse to run. */
-export const IMPLEMENTED_PURPOSES: ReadonlySet<AIPurpose> = new Set<AIPurpose>(["map_fields", "draft_email", "draft_answer", "extract_facts", "match_job"]);
+export const IMPLEMENTED_PURPOSES: ReadonlySet<AIPurpose> = new Set<AIPurpose>(["map_fields", "draft_email", "draft_answer", "extract_facts", "match_job", "understand_email", "understand_whatsapp", "draft_whatsapp_reply"]);
 
 /**
  * - local_only: never call a cloud model;

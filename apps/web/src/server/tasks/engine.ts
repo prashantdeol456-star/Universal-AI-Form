@@ -7,6 +7,8 @@ import { z } from "zod";
 import { draftAnswer, saveAnswer } from "../agent/service";
 import { composeEmail } from "../compose/service";
 import { db, decryptValue, encryptValue } from "../db";
+import { approveDraftInTx, createApprovedGmailDraft } from "../messaging/drafts";
+import { draftReply, recipientsSha, summarizeConversation } from "../messaging/intelligence";
 
 /**
  * Task types and step handlers of the web app (AI browser Phase 1). Server steps reuse
@@ -44,6 +46,19 @@ const fillFormInput = z.object({
   url: z.url({ protocol: /^https?$/ }).max(2000),
 });
 type FillFormInput = z.infer<typeof fillFormInput>;
+
+// Phase 5: conversations. Inputs carry only references (thread / chat ids), never message text.
+const gmailThreadId = z.string().regex(/^[0-9a-f]{6,32}$/i, "Not a Gmail thread id");
+const replyTone = z.enum(["professional", "friendly", "concise", "formal"]).default("professional");
+const replyInstruction = z.string().trim().max(600).transform(stripSecrets).nullish().transform((v) => v || null);
+const emailThreadInput = z.object({ threadId: gmailThreadId });
+type EmailThreadInput = z.infer<typeof emailThreadInput>;
+const emailReplyInput = z.object({ threadId: gmailThreadId, instruction: replyInstruction, tone: replyTone, jobId: z.uuid().nullish().transform((v) => v ?? null) });
+type EmailReplyInput = z.infer<typeof emailReplyInput>;
+const chatInput = z.object({ chatId: z.uuid() });
+type ChatInput = z.infer<typeof chatInput>;
+const chatReplyInput = z.object({ chatId: z.uuid(), instruction: replyInstruction, tone: replyTone });
+type ChatReplyInput = z.infer<typeof chatReplyInput>;
 
 /** Read + fill steps of one page of a form (fill is not safe to repeat blindly). */
 const pageSteps = (n: number) => [
@@ -83,6 +98,38 @@ const templates: Record<string, TaskTemplate> = {
       return pageSteps(n);
     },
   } satisfies TaskTemplate<FillFormInput>,
+  summarize_email_thread: {
+    parse: parseWith(emailThreadInput),
+    defaultTitle: () => "Summarise an email conversation",
+    steps: () => [{ key: "summary", type: "server.summarize_conversation", title: "Read the thread and summarise it", input: { source: "gmail" } }],
+  } satisfies TaskTemplate<EmailThreadInput>,
+  draft_email_reply: {
+    parse: parseWith(emailReplyInput),
+    defaultTitle: () => "Draft an email reply",
+    steps: () => [
+      { key: "draft", type: "server.draft_reply", title: "Write the reply draft", input: { source: "gmail" } },
+      { key: "approve", type: "approval.create_gmail_draft", title: "Approve creating it as a Gmail draft (not sent)" },
+      // Contacts Google: never repeated blindly; an unknown outcome pauses the task for the user to check Gmail.
+      { key: "create", type: "server.create_gmail_draft", title: "Create the draft in Gmail", idempotent: false },
+    ],
+  } satisfies TaskTemplate<EmailReplyInput>,
+  summarize_whatsapp_conversation: {
+    parse: parseWith(chatInput),
+    defaultTitle: () => "Summarise a WhatsApp chat",
+    steps: () => [{ key: "summary", type: "server.summarize_conversation", title: "Read the imported chat and summarise it", input: { source: "whatsapp" } }],
+  } satisfies TaskTemplate<ChatInput>,
+  draft_whatsapp_reply: {
+    parse: parseWith(chatReplyInput),
+    defaultTitle: () => "Draft a WhatsApp reply",
+    // No sending channel exists for exported chats: the user copies the draft into WhatsApp.
+    steps: () => [{ key: "draft", type: "server.draft_reply", title: "Write the reply draft (you copy and send it yourself)", input: { source: "whatsapp" } }],
+  } satisfies TaskTemplate<ChatReplyInput>,
+};
+
+const conversationRef = (ctx: Parameters<ServerStepHandler>[0]) => {
+  const source = ctx.stepInput.source === "whatsapp" ? "whatsapp" : "gmail";
+  const ref = String(source === "gmail" ? ctx.taskInput.threadId : ctx.taskInput.chatId);
+  return { source, ref } as const;
 };
 
 const serverHandlers: Record<string, ServerStepHandler> = {
@@ -95,6 +142,46 @@ const serverHandlers: Record<string, ServerStepHandler> = {
       secret: JSON.stringify({ subject: r.subject, body: r.body }),
       message: r.source === "gemini" ? "Draft written with AI" : "Draft written from a template",
     };
+  },
+  // Results hold ids and counts only; summaries and drafts live in their own (deletable, encrypted) tables.
+  "server.summarize_conversation": async (ctx) => {
+    const { source, ref } = conversationRef(ctx);
+    const s = await summarizeConversation({ id: ctx.userId, role: ctx.role }, source, ref, ctx.taskId);
+    return {
+      result: { insightId: s.id, provider: s.engine.provider, reason: s.engine.reason, needsReply: s.needsReply, actionItems: s.actionItems.length, questions: s.questions.length },
+      message: s.engine.provider === "rules" ? "Summarised with rules (no AI)" : `Summarised with ${s.engine.provider === "local" ? "the local model" : "Gemini"}`,
+    };
+  },
+  "server.draft_reply": async (ctx) => {
+    const { source, ref } = conversationRef(ctx);
+    const input = ctx.taskInput as EmailReplyInput | ChatReplyInput;
+    const d = await draftReply({ id: ctx.userId, role: ctx.role }, {
+      source,
+      ref,
+      instruction: input.instruction,
+      tone: input.tone,
+      jobId: "jobId" in input ? input.jobId : null,
+      // One draft per task: a re-run returns the same draft.
+      idempotencyKey: `task:${ctx.taskId}`,
+      taskId: ctx.taskId,
+    });
+    return {
+      result: {
+        draftId: d.id,
+        recipientsSha: recipientsSha(d.recipients),
+        recipientCount: d.recipients.length,
+        provider: d.meta?.engine.provider ?? null,
+        reason: d.meta?.engine.reason ?? null,
+        missing: d.meta?.missing.length ?? 0,
+        unsupported: d.meta?.unsupported.length ?? 0,
+      },
+      message: "Draft written. Review and edit it before approving.",
+    };
+  },
+  "server.create_gmail_draft": async (ctx) => {
+    const draftId = String((ctx.previous.draft?.result as JsonObject | null)?.draftId ?? "");
+    const r = await createApprovedGmailDraft({ id: ctx.userId, role: ctx.role }, draftId);
+    return { result: { gmailDraftId: r.gmailDraftId, reused: r.reused }, message: r.reused ? "The Gmail draft already existed; no duplicate was created" : "Draft created in Gmail. It was not sent." };
   },
   "server.draft_answer": async (ctx) => {
     const question = String(ctx.stepInput.question ?? "");
@@ -124,6 +211,24 @@ const approvals: Record<string, ApprovalSpec> = {
       const list = answersOf(ctx);
       for (const a of list) await saveAnswer({ id: ctx.userId, role: ctx.role }, { question: questions.get(a.key)!, answer: a.answer }, tx);
       return { saved: list.length };
+    },
+  },
+  "approval.create_gmail_draft": {
+    actionType: "gmail.create_draft",
+    summary: (ctx) => {
+      const n = Number((ctx.previous.draft?.result as JsonObject | null)?.recipientCount ?? 0);
+      return `Create your reply as a DRAFT in Gmail, to ${n} recipient${n === 1 ? "" : "s"} shown on the draft, with the text as it is when you approve. It is not sent; you send it from Gmail yourself.`;
+    },
+    // Bound to the draft and its recipients: different recipients need a new approval.
+    payload: (ctx) => {
+      const r = (ctx.previous.draft?.result as JsonObject | null) ?? {};
+      return { draftId: String(r.draftId ?? ""), recipientsSha: String(r.recipientsSha ?? "") };
+    },
+    // Database only: freezes the approved text; the Gmail call is the next (non-repeatable) step.
+    effect: async (ctx, tx) => {
+      const r = (ctx.previous.draft?.result as JsonObject | null) ?? {};
+      const a = await approveDraftInTx(tx, ctx.userId, String(r.draftId ?? ""), String(r.recipientsSha ?? ""));
+      return { approved: a.approved };
     },
   },
   "approval.confirm_submission": {

@@ -94,6 +94,21 @@ export class LocalAIProvider implements AIProvider {
     return { raw: body.message?.content ?? "" };
   }
 
+  /** Structured JSON on the self-hosted model (conversation intelligence). Reply validated by the caller. */
+  async generateStructured(input: { system: string; user: string; schema: object; temperature?: number }): Promise<{ raw: string }> {
+    const body = (await this.post("/api/chat", {
+      model: this.model,
+      stream: false,
+      options: { temperature: input.temperature ?? 0.2 },
+      format: input.schema,
+      messages: [
+        { role: "system", content: input.system },
+        { role: "user", content: input.user },
+      ],
+    })) as { message?: { content?: string } };
+    return { raw: body.message?.content ?? "" };
+  }
+
   /** Job description summary on the self-hosted model. Reply validated by the caller. */
   async analyzeJob(input: JobAnalysisInput): Promise<{ raw: string }> {
     const body = (await this.post("/api/chat", {

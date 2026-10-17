@@ -20,6 +20,7 @@
     "@ufa/storage": "*",
     "@ufa/tasks": "*",
     "@ufa/jobs": "*",
+    "@ufa/messaging": "*",
     "next": "^15.5.4",
     "nodemailer": "^10.0.16",
     "react": "^19.1.1",

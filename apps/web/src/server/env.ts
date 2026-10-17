@@ -60,6 +60,24 @@ const schema = z.object({
   // Persistent task engine runner (AI browser Phase 1). Several web containers are safe: tasks are leased.
   TASKS_RUNNER_ENABLED: z.stringbool().default(true),
 
+  // Gmail (AI browser Phase 5): Google OAuth client for a "Web application". Empty = Gmail is off
+  // (the dashboard shows setup steps, no connect button). Redirect URI must be registered at Google.
+  GMAIL_OAUTH_CLIENT_ID: z.string().default(""),
+  GMAIL_OAUTH_CLIENT_SECRET: z.string().default(""),
+  GMAIL_OAUTH_REDIRECT_URI: z.string().default(""),
+  // Test-only overrides of Google's endpoints (ignored in production).
+  GOOGLE_OAUTH_AUTH_URL: z.string().default(""),
+  GOOGLE_OAUTH_TOKEN_URL: z.string().default(""),
+  GOOGLE_OAUTH_REVOKE_URL: z.string().default(""),
+  GMAIL_API_BASE: z.string().default(""),
+  // WhatsApp Business Platform (Cloud API) for a business number: detected only; sending is not built yet.
+  WHATSAPP_BUSINESS_PHONE_NUMBER_ID: z.string().default(""),
+  WHATSAPP_BUSINESS_TOKEN: z.string().default(""),
+  // Imported WhatsApp chats are deleted after this many days unless the user changes it per chat.
+  WHATSAPP_RETENTION_DAYS: z.coerce.number().int().min(1).max(365).default(30),
+  // Conversation summaries / reply drafts written by cloud AI per user per day.
+  MESSAGES_AI_DAILY_LIMIT: z.coerce.number().int().min(0).max(10_000).default(50),
+
   // Learning engine: promotes mappings that several different users agree on (phase 9).
   LEARNING_ENABLED: z.stringbool().default(true),
   LEARNING_INTERVAL_MINUTES: z.coerce.number().int().min(1).max(1440).default(30),

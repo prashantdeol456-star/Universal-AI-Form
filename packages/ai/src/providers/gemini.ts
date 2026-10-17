@@ -130,6 +130,19 @@ export class GeminiProvider implements AIProvider {
     return { raw: text, usage };
   }
 
+  /**
+   * Structured JSON for conversation intelligence (summaries, reply drafts). The caller
+   * decides consent and minimises the context; the raw reply is validated by the caller.
+   */
+  async generateStructured(input: { system: string; user: string; schema: object; temperature?: number }): Promise<{ raw: string; usage: TokenUsage }> {
+    const { text, usage } = await this.generate({
+      systemInstruction: { parts: [{ text: input.system }] },
+      contents: [{ role: "user", parts: [{ text: input.user }] }],
+      generationConfig: { temperature: input.temperature ?? 0.2, responseMimeType: "application/json", responseJsonSchema: input.schema },
+    });
+    return { raw: text, usage };
+  }
+
   /** Summarises a public job description (no personal data). Reply validated by validateJobAnalysis. */
   async analyzeJob(input: JobAnalysisInput): Promise<{ raw: string; usage: TokenUsage }> {
     const { text, usage } = await this.generate({

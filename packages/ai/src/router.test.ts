@@ -9,10 +9,10 @@ const local = new LocalAIProvider({ baseUrl: "http://localhost:11434", model: "x
 describe("ModelRouter", () => {
   it("declares all roadmap purposes but only implements the migrated ones", () => {
     expect(AI_PURPOSES).toContain("understand_whatsapp");
-    expect([...IMPLEMENTED_PURPOSES].sort()).toEqual(["draft_answer", "draft_email", "extract_facts", "map_fields", "match_job"]);
+    expect([...IMPLEMENTED_PURPOSES].sort()).toEqual(["draft_answer", "draft_email", "draft_whatsapp_reply", "extract_facts", "map_fields", "match_job", "understand_email", "understand_whatsapp"]);
     const r = new ModelRouter({ mode: "hybrid", local, gemini });
     expect(r.cloud("plan_task", { consent: true })).toEqual({ allowed: false, reason: "not_implemented" });
-    expect(() => r.local("draft_whatsapp_reply")).toThrow(PurposeNotImplementedError);
+    expect(() => r.local("plan_task")).toThrow(PurposeNotImplementedError);
     expect(() => r.cloudAvailable("understand_document")).toThrow(PurposeNotImplementedError);
   });
 
