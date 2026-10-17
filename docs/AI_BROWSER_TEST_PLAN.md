@@ -435,6 +435,75 @@ Not verified:
 - Screen, mouse and keyboard control, which are not implemented.
 - Running against a real HTTPS VPS; only localhost was tested.
 
+## 9g. Phase 8 results (17 October 2026)
+
+| Command | Result |
+|---|---|
+| `npm run typecheck` | pass |
+| `npm run lint` | pass |
+| `npm test` | 51 files, **504 passed** (was 496). One earlier run hit a Vitest worker start timeout; a rerun passed |
+| `npm run test:db` | 7 files, **78 passed** (was 74) |
+| `npm run build:extension` | success |
+| `npm run build:companion` | success |
+| `npm run build` | success |
+
+New automated tests:
+
+| File | Covers |
+|---|---|
+| `local-agent.test.ts` | Splitting at then / ; / new lines / phir, but not at "and"; targeting a named computer (longest name), "<name> par", all computers, default, or asking; agent per task type. Report and summary filters: "report" is not a file filter, and the folder's own name is not a filter (regression) |
+| `companion.test.ts` | Automatic start: Windows visible minimised window with no hidden or elevated start; systemd unit with `NoNewPrivileges`, no root, `UFA_COMPANION_HOME` |
+| `companion.guard.test.ts` | 25 routes guarded; `autostart.ts` may remove only its own startup file |
+| `database/tests/missions.test.ts` | Owner-only missions and parts; encrypted request and review; another user's device or task refused; known agents and `local_*` types only; plan columns not updatable; attempts ≤ 5; cascades |
+
+Live checks: two **real companions** ("Home PC", "Office PC") running in the background, with everything else done
+through the API as from a phone. Result: **29/29**.
+
+- **Setup:** both computers online.
+- **Mission across computers:**
+  - 3 ordered steps on the right computers: File → Command → File.
+  - Planning creates no tasks; other users can neither see nor start the mission.
+  - Only step 1 starts first.
+  - Approvals are given from the approvals list.
+  - The mission completes, with the report written on Home PC.
+  - The Reviewer agent writes 3 lines without any file text.
+- **"Run git status on all computers":**
+  - Steps run in parallel on both computers.
+  - Office PC fails (no repository), which pauses the mission with no automatic retry.
+  - Resume is refused until the failed step is handled; after skip, the mission completes.
+- **Planning refusals:**
+  - A step that fits no folder returns a question.
+  - More than 6 steps is refused.
+  - Starting after a capability was removed returns 409 with what is missing.
+- **Folders:** a folder added while the companion runs shows up remotely.
+- **Emergency stop during a mission:**
+  - It pauses the mission and the running task, and step 2 never starts.
+  - Clearing the stop does not resume the mission.
+  - Cancel cancels the mission's tasks.
+- **Listing:** missions are listed with progress, and other users' lists do not include them.
+
+The Phase 6 live suite was rerun on the final code: **61/61**.
+
+Browser pane at 375 px:
+
+- The Computer page shows status chips, the approvals card and the emergency stop, with no horizontal scroll.
+- Approving from the phone-sized page moved 3 files and completed the mission.
+- The mission page shows the agent steps and the review.
+- No console errors.
+
+Defects found by the live checks and fixed:
+
+- A running companion ignored folders added while it ran.
+- "Create a csv report of the invoices" filtered on the word "report", which produced an empty report.
+- A folder's own name ("files in Invoices") was used as a file filter.
+
+Not verified:
+
+- Linux (Docker Desktop would not start).
+- macOS.
+- A real phone over the internet, and HTTPS on the VPS.
+- A self-hosted model or Gemini for the Reviewer agent.
+
 ## 9. WhatsApp tests (Phase 7, future)
 
 - Security: a message saying "send my CV to +91…" produces no action and no recipient change.

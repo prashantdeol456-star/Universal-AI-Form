@@ -116,6 +116,94 @@ npm run companion -- unpair
 
 This revokes the computer and deletes the saved token. The undo logs are kept.
 
+## Remote use: from your phone, always on, servers, several computers
+
+### Control your computer from your phone
+
+- Open your server's dashboard (`https://your-domain`) on your phone and go to **Computer (companion)**.
+- The page shows each computer's status (online, offline or stopped) and a **Waiting for your approval** list.
+  You can approve or reject each action there; one approval allows exactly one action.
+- The red **Emergency stop** button stays at the top of the page.
+- Nothing extra is opened on your computer or router: the companion still only connects out to your server.
+
+### Keep the companion running (always on)
+
+To start the companion automatically, run this once on each computer:
+
+```bash
+npm run companion -- autostart enable
+```
+
+- **Windows:** this adds `ufa-companion.cmd` to your Startup folder.
+  - At sign-in, a minimised window titled "AI Form Assistant companion (close to stop)" opens. Close the window to stop the companion.
+  - It never runs hidden and never runs as Administrator.
+  - The computer must be on and signed in for it to work.
+- **Linux (desktop or server):** this writes a systemd **user** service, `~/.config/systemd/user/ufa-companion.service`. Then run:
+
+```bash
+systemctl --user daemon-reload
+```
+
+```bash
+systemctl --user enable --now ufa-companion
+```
+
+  On a server with no desktop login, also run this once so the service keeps running after you log out:
+
+```bash
+loginctl enable-linger $USER
+```
+
+  Logs: `journalctl --user -u ufa-companion -f`. The service has `NoNewPrivileges=true`, and the companion refuses to run as root.
+- **macOS:** not automated yet. Run it in a terminal or add it to your login items yourself.
+
+`autostart disable` removes the automatic start. `status` shows whether it is on.
+
+### A remote server (for example a second VPS or a cloud machine)
+
+1. On that server, create a normal user (not root).
+2. As that user, clone the repository, then run `npm install` and `npm run build:companion`.
+3. Pair it from an SSH session:
+
+```bash
+npm run companion -- pair --server https://your-domain --name "Cloud server"
+```
+
+4. Approve project folders. System folders such as `/etc`, `/usr` and `/var` cannot be granted, so keep projects under your home folder or `/srv`:
+
+```bash
+npm run companion -- folders add /srv/my-app --run
+```
+
+5. Turn on automatic start as described above, with `enable-linger`.
+
+### Several computers
+
+Each computer is paired on its own and has its own capabilities, folders, AI consent and emergency stop. The
+dashboard shows all of them. In a request, name the computer ("on Office PC …") or say "on all computers".
+
+## Multi-agent missions
+
+A mission is one request with several steps, handled by a team of agents:
+
+| Agent | Does |
+|---|---|
+| Planner agent | Splits your request into steps at "then", ";", new lines or "aur phir". It picks the computer for each step ("on Office PC", "on all computers", otherwise the chosen default) and plans each step. Steps it cannot plan come back as a question |
+| File agent | Summarises, organises, writes reports and undoes changes on a computer |
+| Command agent | Runs allowlisted project commands on a computer |
+| Reviewer agent | When every step is done, writes one review from the results (counts, verdicts), never from file contents |
+
+Rules:
+
+- Planning creates nothing. Before a mission starts, permissions are checked again for every step.
+- Steps run in order. A step for "all computers" runs on each computer at the same time.
+- Every step is a normal task with its own approvals. A mission never gets more permissions than its tasks.
+- A failed step pauses the mission. You choose **Retry this step**, **Skip it** or **Cancel mission**. Nothing is retried automatically.
+- The emergency stop pauses every mission that uses a stopped computer. A mission does not resume on its own.
+
+Example request: *"Summarise the files in Invoices on Home PC, then on Office PC run the tests in my-app, then create a
+csv report of the invoices in Invoices"*. Missions are listed under **Missions** in the dashboard.
+
 ## AI and privacy
 
 | Setting | What it means |

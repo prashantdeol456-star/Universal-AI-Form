@@ -16,6 +16,7 @@ test && npm run test:db && npm run build:extension && npm run build` green befor
 | 5 — Email and WhatsApp | **Done, with Gmail verified only against a local mock of Google** (17 October 2026) — see "Phase 5 — implemented" below |
 | 6 — Local companion and continuous learning | **Done, minimum viable companion** (17 October 2026): files, organise/undo, reports, allowlisted commands; screen / mouse / keyboard deferred — see "Phase 6 — implemented" below |
 | 7 — WhatsApp | Design only (`AI_BROWSER_WHATSAPP_DESIGN.md`) |
+| 8 — Remote work and multi-agent missions | **Done** (17 October 2026): phone control, automatic start (Windows / Linux systemd), several computers, Planner / File / Command / Reviewer agents — see "Phase 8 — implemented" below. Linux tested by unit tests only (Docker could not be started) |
 
 ## Phase 0 — Groundwork (no new features)
 
@@ -321,6 +322,28 @@ index are not part of it. Install guide: `docs/companion.md`.
 - Images are not read (no OCR on the computer); scanned PDFs are reported as unreadable.
 - The emergency stop reaches a running companion within its 5-second heartbeat, not instantly; an offline companion learns it at its next connection (it gets no work meanwhile).
 - Organise works on the top level of one folder; undo leaves created (empty) sub-folders in place.
+
+## Phase 8 — Remote work and multi-agent missions (implemented)
+
+Requested by the owner after Phase 6: use the computer from a phone, run the companion on remote (Linux) servers, one
+dashboard for several computers, and "multi-agent" work.
+
+| Part | Where | What it does |
+|---|---|---|
+| Phone control | `/dashboard/companion` (`RemoteCards.tsx`), `GET /api/agent/approvals` | Computer status chips (online / offline / stopped, "n of m online"); "Waiting for your approval" list of computer-task approvals with Approve / Reject (refreshes every 10 s); emergency stop at the top. Checked at 375 px: no horizontal scroll |
+| Always on | `apps/companion/src/autostart.ts`, `autostart enable|disable` | Windows: `.cmd` in the user's Startup folder that opens a **visible, minimised, titled** window (never hidden, never elevated). Linux: systemd **user** unit (`Restart=on-failure`, `NoNewPrivileges=true`) + instructions for `enable-linger` on servers. macOS: manual |
+| Live folder changes | `agent.ts` heartbeat | A running companion re-reads its folders each heartbeat, so `folders add/remove` takes effect without a restart (found in live checks) |
+| Several computers | existing device model + mission targeting | "on <computer>" (longest name wins), "<computer> par", "on all computers" / "sab computers par"; otherwise the default computer |
+| Missions | `packages/local-agent/src/mission.ts`, `server/companion/missions.ts`, `/api/agent/missions[/:id[/control]]`, `/dashboard/missions` | Planner agent: split (≤ 6 steps, ≤ 20 tasks), target computers, plan each part with the Phase 6 planner (rules → validated model plan); "all computers" skips computers without a matching folder and says so. Start re-checks permissions (409 with the list). Coordinator (task runner tick): one group at a time, parallel within a group, idempotency key per attempt; failed / cancelled part → mission paused with the reason; retry (≤ 5 attempts) / skip / pause / resume / cancel; never automatic retries. Reviewer agent: one review from result metadata; rules unless a self-hosted model is configured; cloud only if every involved computer allows cloud AI. Emergency stop pauses affected missions |
+| Migration | `0023_agent_missions.sql` | `agent_missions` (encrypted request and review), `agent_mission_tasks` (agent `file`/`command`, `local_*` types, owner's devices and tasks only, plan columns not updatable by the app role); forced RLS |
+
+**Known limitations**
+
+- **Linux not tested live**: Docker Desktop would not start on the development machine (it exits at once; it may need a first-run sign-in or terms that only the owner can accept). The systemd unit and Linux paths are covered by unit tests only.
+- Not tested on a real phone or over the internet; tested in the in-app browser at 375 px against localhost.
+- The Windows automatic start needs the user to be signed in; there is no Windows service (that would need Administrator).
+- Mission decomposition is rule-based (the model is used only per step, through the Phase 6 planner); steps cannot pass data to each other except through files in approved folders.
+- No push notifications to the phone when an approval is waiting; the page refreshes every 10 s.
 
 ## Phase 7 — WhatsApp Intelligence Agent (future; design only)
 

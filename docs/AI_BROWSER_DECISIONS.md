@@ -103,6 +103,18 @@ Each entry: question, options, recommendation, and whether the owner's approval 
 | D-67 | Learning = saved workflows (draft until approved), confirmed preferences, stored feedback; never model training; never fewer approvals | Transparent, editable memory; the user stays in control |
 | D-68 | File text leaves the computer only as the summary the user asked for; excerpts to AI only with per-device consent (cloud needs a second consent) | Local files are the most private data the app touches |
 
+### Phase 8 decisions
+
+| ID | Decision | Why |
+|---|---|---|
+| D-69 | Remote control = the existing dashboard + outbound companion; no port forwarding, tunnel or remote-desktop protocol | Works from any phone browser without exposing the computer |
+| D-70 | Automatic start is visible (Windows: titled minimised window; Linux: named systemd user unit) and never elevated | Always-on must not become covert or privileged |
+| D-71 | Agents are roles over normal tasks; a mission adds ordering and review, never permissions | One policy engine and one approval path for everything |
+| D-72 | Planning a mission creates nothing; starting re-checks every step's permissions | Permissions may change between planning and starting |
+| D-73 | A failed or cancelled step pauses the mission; retry / skip are explicit user actions (≤ 5 attempts) | No blind retries of possibly half-done work |
+| D-74 | The Reviewer agent sees only result metadata; cloud only if every involved computer allows cloud AI | A summary across computers must not leak one computer's data under another's consent |
+| D-75 | Mission parts are fixed after planning (DB grants allow only progress columns) | What runs is what the user saw in the plan |
+
 ## Personal WhatsApp vs WhatsApp Business
 
 - **Personal WhatsApp** (the regular app): no official API gives a third-party app access to its chats. Supported,
